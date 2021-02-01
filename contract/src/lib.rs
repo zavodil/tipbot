@@ -6,6 +6,9 @@ use std::collections::HashMap;
 
 pub type WrappedBalance = U128;
 
+const MASTER_ACCOUNT_ID: &str = "zavodil.testnet";
+const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000; // 0.003 NEAR
+
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
@@ -60,12 +63,13 @@ impl NearTips {
         env::log(format!("@{} tipped {} yNEAR for telegram account {}", account_id, amount.0, telegram_account).as_bytes());
     }
 
-    pub fn withdraw_from_telegram(&mut self, telegram_account: String) {
-        let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0;
+    pub fn withdraw_from_telegram(&mut self, telegram_account: String, account_id: AccountId) {
+        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
+        let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0 - WITHDRAW_COMMISSION;
         assert!(balance > 0, "Nothing to withdraw");
 
-        let account_id = env::predecessor_account_id();
         Promise::new(account_id.clone()).transfer(balance);
 
         self.telegram_tips.insert(telegram_account.clone(), 0);

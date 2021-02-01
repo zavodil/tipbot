@@ -1,12 +1,18 @@
 import 'regenerator-runtime/runtime'
 import React from 'react'
-import { login, logout } from './utils'
-import {utils} from 'near-api-js'
+import {login, logout} from './utils'
+import * as nearAPI from 'near-api-js'
 import {BN} from 'bn.js'
 import './global.css'
+import './app.css'
+import {useDetectOutsideClick} from "./useDetectOutsideClick";
 
 import getConfig from './config'
-const { networkId } = getConfig(process.env.NODE_ENV || 'development')
+import getAppSettings from './app-settings'
+
+const appSettings = getAppSettings();
+const config = getConfig(process.env.NODE_ENV || 'development');
+const networkId = config.networkId;
 
 const FRAC_DIGITS = 5;
 
@@ -15,190 +21,262 @@ function ConvertToYoctoNear(amount) {
 }
 
 export default function App() {
-  // use React Hooks to store greeting in component state
-  const [greeting, set_greeting] = React.useState()
+    const [deposit, setDeposit] = React.useState(0);
 
-  // when the user has not yet interacted with the form, disable the button
-  const [buttonDisabled, setButtonDisabled] = React.useState(true)
+    // when the user has not yet interacted with the form, disable the button
+    const [buttonDisabled, setButtonDisabled] = React.useState(true)
 
-  // after submitting the form, we want to show Notification
-  const [showNotification, setShowNotification] = React.useState(false)
+    // after submitting the form, we want to show Notification
+    const [showNotification, setShowNotification] = React.useState(false)
 
-  // The useEffect hook can be used to fire side-effects during render
-  // Learn more: https://reactjs.org/docs/hooks-intro.html
-  React.useEffect(
-    () => {
-      // in this case, we only care to query the contract when signed in
-      if (window.walletConnection.isSignedIn()) {
+    const navDropdownRef = React.useRef(null);
+    const [isNavDropdownActive, setIsNaVDropdownActive] = useDetectOutsideClick(navDropdownRef, false);
 
-        // window.contract is set by initContract in index.js
-        window.contract.get_deposit({ account_id: window.accountId })
-          .then(greetingFromContract => {
-            set_greeting(utils.format.formatNearAmount(greetingFromContract, FRAC_DIGITS))
-          })
-      }
-    },
-
-    // The second argument to useEffect tells React when to re-run the effect
-    // Use an empty array to specify "only run on first render"
-    // This works because signing into NEAR Wallet reloads the page
-    []
-  )
-
-  // if not signed in, return early with sign-in prompt
-  if (!window.walletConnection.isSignedIn()) {
-    return (
-      <main>
-        <h1>Welcome to NEAR!</h1>
-        <p>
-          To make use of the NEAR blockchain, you need to sign in. The button
-          below will sign you in using NEAR Wallet.
-        </p>
-        <p>
-          By default, when your app runs in "development" mode, it connects
-          to a test network ("testnet") wallet. This works just like the main
-          network ("mainnet") wallet, but the NEAR Tokens on testnet aren't
-          convertible to other currencies – they're just for testing!
-        </p>
-        <p>
-          Go ahead and click the button below to try it out:
-        </p>
-        <p style={{ textAlign: 'center', marginTop: '2.5em' }}>
-          <button onClick={login}>Sign in</button>
-        </p>
-      </main>
-    )
-  }
-
-  return (
-    // use React Fragment, <>, to avoid wrapping elements in unnecessary divs
-    <>
-      <button className="link" style={{ float: 'right' }} onClick={logout}>
-        Sign out
-      </button>
-      <main>
-        <h1>
-          <label
-            htmlFor="greeting"
-            style={{
-              color: 'var(--secondary)',
-              borderBottom: '2px solid var(--secondary)'
-            }}
-          >
-            {greeting}
-          </label>
-          {' '/* React trims whitespace around tags; insert literal space character when needed */}
-          {window.accountId}!
-        </h1>
-        <form onSubmit={async event => {
-          event.preventDefault()
-
-          // get elements from the form using their id attribute
-          const { fieldset, greeting } = event.target.elements
-
-          // hold onto new user-entered value from React's SynthenticEvent for use after `await` call
-          const newGreeting = greeting.value
-
-          // disable the form while the value gets updated on-chain
-          fieldset.disabled = true
-
-          try {
-            // make an update call to the smart contract
-            await window.contract.deposit({
-              // pass the value that the user entered in the greeting field
-            }, 300000000000000, ConvertToYoctoNear(newGreeting))
-          } catch (e) {
-            alert(
-              'Something went wrong! ' +
-              'Maybe you need to sign out and back in? ' +
-              'Check your browser console for more info.'
-            )
-            throw e
-          } finally {
-            // re-enable the form, whether the call succeeded or failed
-            fieldset.disabled = false
-          }
-
-          // update local `greeting` variable to match persisted value
-          set_greeting(newGreeting)
-
-          // show Notification
-          setShowNotification(true)
-
-          // remove Notification again after css animation completes
-          // this allows it to be shown again next time the form is submitted
-          setTimeout(() => {
-            setShowNotification(false)
-          }, 11000)
-        }}>
-          <fieldset id="fieldset">
-            <label
-              htmlFor="greeting"
-              style={{
-                display: 'block',
-                color: 'var(--gray)',
-                marginBottom: '0.5em'
-              }}
-            >
-              Change greeting
-            </label>
-            <div style={{ display: 'flex' }}>
-              <input
-                autoComplete="off"
-                defaultValue={greeting}
-                id="greeting"
-                onChange={e => setButtonDisabled(e.target.value === greeting)}
-                style={{ flex: 1 }}
-              />
-              <button
-                disabled={buttonDisabled}
-                style={{ borderRadius: '0 5px 5px 0' }}
-              >
-                Save
-              </button>
+    /* HEADER */
+    const Deposit = () => {
+        return deposit && Number(deposit) ?
+            <div className="nav user-balance" data-tip="Your internal balance in Multisender App">
+                {" App Balance: " + deposit + "Ⓝ"}
             </div>
-          </fieldset>
-        </form>
-        <p>
-          Look at that! A Hello World app! This greeting is stored on the NEAR blockchain. Check it out:
-        </p>
-        <ol>
-          <li>
-            Look in <code>src/App.js</code> and <code>src/utils.js</code> – you'll see <code>get_greeting</code> and <code>set_greeting</code> being called on <code>contract</code>. What's this?
-          </li>
-          <li>
-            Ultimately, this <code>contract</code> code is defined in <code>assembly/main.ts</code> – this is the source code for your <a target="_blank" rel="noreferrer" href="https://docs.near.org/docs/roles/developer/contracts/intro">smart contract</a>.</li>
-          <li>
-            When you run <code>yarn dev</code>, the code in <code>assembly/main.ts</code> gets deployed to the NEAR testnet. You can see how this happens by looking in <code>package.json</code> at the <code>scripts</code> section to find the <code>dev</code> command.</li>
-        </ol>
-        <hr />
-        <p>
-          To keep learning, check out <a target="_blank" rel="noreferrer" href="https://docs.near.org">the NEAR docs</a> or look through some <a target="_blank" rel="noreferrer" href="https://examples.near.org">example apps</a>.
-        </p>
-      </main>
-      {showNotification && <Notification />}
-    </>
-  )
+            :
+            null;
+    };
+
+    const NearLogo = () => {
+        return <div className="logo-container content-desktop">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 414 162" className="near-logo">
+                <g id="Layer_1" data-name="Layer 1">
+                    <path className="polymorph"
+                          d="M207.21,54.75v52.5a.76.76,0,0,1-.75.75H201a7.49,7.49,0,0,1-6.3-3.43l-24.78-38.3.85,19.13v21.85a.76.76,0,0,1-.75.75h-7.22a.76.76,0,0,1-.75-.75V54.75a.76.76,0,0,1,.75-.75h5.43a7.52,7.52,0,0,1,6.3,3.42l24.78,38.24-.77-19.06V54.75a.75.75,0,0,1,.75-.75h7.22A.76.76,0,0,1,207.21,54.75Z"
+                    ></path>
+                    <path className="polymorph"
+                          d="M281,108h-7.64a.75.75,0,0,1-.7-1L292.9,54.72A1.14,1.14,0,0,1,294,54h9.57a1.14,1.14,0,0,1,1.05.72L324.8,107a.75.75,0,0,1-.7,1h-7.64a.76.76,0,0,1-.71-.48l-16.31-43a.75.75,0,0,0-1.41,0l-16.31,43A.76.76,0,0,1,281,108Z"
+                    ></path>
+                    <path className="polymorph"
+                          d="M377.84,106.79,362.66,87.4c8.57-1.62,13.58-7.4,13.58-16.27,0-10.19-6.63-17.13-18.36-17.13H336.71a1.12,1.12,0,0,0-1.12,1.12h0a7.2,7.2,0,0,0,7.2,7.2H357c7.09,0,10.49,3.63,10.49,8.87s-3.32,9-10.49,9H336.71a1.13,1.13,0,0,0-1.12,1.13v26a.75.75,0,0,0,.75.75h7.22a.76.76,0,0,0,.75-.75V87.87h8.33l13.17,17.19a7.51,7.51,0,0,0,6,2.94h5.48A.75.75,0,0,0,377.84,106.79Z"
+                    ></path>
+                    <path className="polymorph"
+                          d="M258.17,54h-33.5a1,1,0,0,0-1,1h0A7.33,7.33,0,0,0,231,62.33h27.17a.74.74,0,0,0,.75-.75V54.75A.75.75,0,0,0,258.17,54Zm0,45.67h-25a.76.76,0,0,1-.75-.75V85.38a.75.75,0,0,1,.75-.75h23.11a.75.75,0,0,0,.75-.75V77a.75.75,0,0,0-.75-.75H224.79a1.13,1.13,0,0,0-1.12,1.13v29.45a1.12,1.12,0,0,0,1.12,1.13h33.38a.75.75,0,0,0,.75-.75v-6.83A.74.74,0,0,0,258.17,99.67Z"
+                    ></path>
+                    <path className="polymorph"
+                          d="M108.24,40.57,89.42,68.5a2,2,0,0,0,3,2.63l18.52-16a.74.74,0,0,1,1.24.56v50.29a.75.75,0,0,1-1.32.48l-56-67A9.59,9.59,0,0,0,47.54,36H45.59A9.59,9.59,0,0,0,36,45.59v70.82A9.59,9.59,0,0,0,45.59,126h0a9.59,9.59,0,0,0,8.17-4.57L72.58,93.5a2,2,0,0,0-3-2.63l-18.52,16a.74.74,0,0,1-1.24-.56V56.07a.75.75,0,0,1,1.32-.48l56,67a9.59,9.59,0,0,0,7.33,3.4h2a9.59,9.59,0,0,0,9.59-9.59V45.59A9.59,9.59,0,0,0,116.41,36h0A9.59,9.59,0,0,0,108.24,40.57Z"
+                    ></path>
+                </g>
+            </svg>
+            <div className="app-name">
+                {appSettings.appNme}
+            </div>
+        </div>;
+    };
+
+    const NavMenu = () => {
+        const onClick = () => setIsNaVDropdownActive(!isNavDropdownActive);
+
+        return (
+            <div className="nav-menu container">
+                <div className="menu-container">
+                    <button onClick={onClick} className="menu-trigger">
+                        <span className="network-title">{config.networkId}</span>
+                        <div className="network-icon"></div>
+                    </button>
+                    <nav
+                        ref={navDropdownRef}
+                        className={`menu ${isNavDropdownActive ? "active" : "inactive"}`}
+                    >
+                        <ul>
+                            <li>
+                                <a href={appSettings.urlMainnet}>Mainnet</a>
+                            </li>
+                            <li>
+                                <a href={appSettings.urlTestnet}>Testnet</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        );
+    };
+
+
+    /* APP */
+    const GetDeposit = async () => {
+        const deposit = await window.contract.get_deposit({
+            account_id: window.accountId
+        });
+        const depositFormatted = nearAPI.utils.format.formatNearAmount(deposit, FRAC_DIGITS);
+        setDeposit(depositFormatted);
+        return depositFormatted;
+    };
+
+    // The useEffect hook can be used to fire side-effects during render
+    // Learn more: https://reactjs.org/docs/hooks-intro.html
+    React.useEffect(
+        async () => {
+            // in this case, we only care to query the contract when signed in
+            if (window.walletConnection.isSignedIn()) {
+                await GetDeposit()
+            }
+        },
+
+        // The second argument to useEffect tells React when to re-run the effect
+        // Use an empty array to specify "only run on first render"
+        // This works because signing into NEAR Wallet reloads the page
+        []
+    )
+
+    // if not signed in, return early with sign-in prompt
+    if (!window.walletConnection.isSignedIn()) {
+        return (
+            <main>
+                <h1>NEAR Tips</h1>
+                <p>
+                    Sends tip in NEAR tokens direct in Telegram!
+                </p>
+                <p>
+                    To make use of the NEAR blockchain, you need to sign in. The button
+                    below will sign you in using NEAR Wallet.
+                </p>
+                <p style={{textAlign: 'center', marginTop: '2.5em'}}>
+                    <button onClick={login}>Sign in</button>
+                </p>
+            </main>
+        )
+    }
+
+    return (
+        // use React Fragment, <>, to avoid wrapping elements in unnecessary divs
+        <>
+            <div className="nav-container">
+                <div className="nav-header">
+                    <NearLogo/>
+                    <div className="nav-item user-name">{window.accountId}</div>
+                    <Deposit/>
+                    <div className="nav align-right">
+                        <NavMenu/>
+                        <div className="account-sign-out">
+                            <button className="link" style={{float: 'right'}} onClick={logout}>
+                                Sign out
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <main>
+                <div className="background-img"></div>
+                <h1>
+                    NEAR Tips
+                </h1>
+                <form onSubmit={async event => {
+                    event.preventDefault()
+
+                    // get elements from the form using their id attribute
+                    const {fieldset, deposit} = event.target.elements;
+
+                    const newDeposit = deposit.value;
+
+                    // disable the form while the value gets updated on-chain
+                    fieldset.disabled = true
+
+                    try {
+                        // make an update call to the smart contract
+                        await window.contract.deposit({
+                        }, 300000000000000, ConvertToYoctoNear(newDeposit))
+                    } catch (e) {
+                        alert(
+                            'Something went wrong! ' +
+                            'Maybe you need to sign out and back in? ' +
+                            'Check your browser console for more info.'
+                        )
+                        throw e
+                    } finally {
+                        // re-enable the form, whether the call succeeded or failed
+                        fieldset.disabled = false
+                    }
+
+                    // update local `greeting` variable to match persisted value
+                    set_deposit(newDeposit)
+
+                    // show Notification
+                    setShowNotification(true)
+
+                    // remove Notification again after css animation completes
+                    // this allows it to be shown again next time the form is submitted
+                    setTimeout(() => {
+                        setShowNotification(false)
+                    }, 11000)
+                }}>
+                    <fieldset id="fieldset">
+                        <label
+                            htmlFor="deposit"
+                            style={{
+                                display: 'block',
+                                color: 'var(--gray)',
+                                marginBottom: '0.5em'
+                            }}
+                        >
+                            Deposit tokens to the app and you will be able to make tips in telegram:
+                        </label>
+                        <div style={{display: 'flex'}}>
+                            <input
+                                autoComplete="off"
+                                defaultValue="0"
+                                id="deposit"
+                                onChange={e => setButtonDisabled(!parseFloat(e.target.value))}
+                                style={{flex: 1}}
+                            />
+                            <button
+                                disabled={buttonDisabled}
+                                style={{borderRadius: '0 5px 5px 0'}}
+                            >
+                                Deposit
+                            </button>
+                        </div>
+                    </fieldset>
+                </form>
+                <div className={"hints"}>
+                    <ul>
+                        <li>Deposit some NEAR on this website</li>
+                        <li>Go to <a href={"https://t.me/nearup_bot"}>@nearup_bot</a></li>
+                        <li>Login with <code>/login</code> command, connect to <code>{networkId}</code> and grant access to the contract <code>{config.contractName}</code></li>
+                        <li>Go to NEAR chats with @nearup_bot and reply to any message with text <code>/tip N</code> to send N NEAR (e.g. <code>/tip 0.1</code>, <code>/tip 1</code>)</li>
+                        <li>Telegram user can check his tips balance at <a href={"https://t.me/nearup_bot"}>@nearup_bot</a> with the command <code>/mytips</code> and withdraw rewards with the command <code>/withdraw</code>.</li>
+                    </ul>
+                </div>
+            </main>
+            <div className="footer">
+                <div className="github">
+                    <div className="build-on-near"><a href="https://nearspace.info">BUILD ON NEAR</a></div>
+                    <div className="brand">NEAR {appSettings.appNme} | <a href={appSettings.github}
+                                                                      rel="nofollow"
+                                                                      target="_blank">Open Source</a></div>
+                </div>
+                <div className="promo">
+                    Made by <a href="https://near.zavodil.ru/" rel="nofollow" target="_blank">Zavodil node</a>
+                </div>
+            </div>
+            {showNotification && <Notification/>}
+        </>
+    )
 }
 
 // this component gets rendered by App after the form is submitted
 function Notification() {
-  const urlPrefix = `https://explorer.${networkId}.near.org/accounts`
-  return (
-    <aside>
-      <a target="_blank" rel="noreferrer" href={`${urlPrefix}/${window.accountId}`}>
-        {window.accountId}
-      </a>
-      {' '/* React trims whitespace around tags; insert literal space character when needed */}
-      called method: 'set_greeting' in contract:
-      {' '}
-      <a target="_blank" rel="noreferrer" href={`${urlPrefix}/${window.contract.contractId}`}>
-        {window.contract.contractId}
-      </a>
-      <footer>
-        <div>✔ Succeeded</div>
-        <div>Just now</div>
-      </footer>
-    </aside>
-  )
+    const urlPrefix = `https://explorer.${networkId}.near.org/accounts`
+    return (
+        <aside>
+            <a target="_blank" rel="noreferrer" href={`${urlPrefix}/${window.accountId}`}>
+                {window.accountId}
+            </a>
+            {' '/* React trims whitespace around tags; insert literal space character when needed */}
+            called method: 'deposit' in contract:
+            {' '}
+            <a target="_blank" rel="noreferrer" href={`${urlPrefix}/${window.contract.contractId}`}>
+                {window.contract.contractId}
+            </a>
+            <footer>
+                <div>✔ Succeeded</div>
+                <div>Just now</div>
+            </footer>
+        </aside>
+    )
 }

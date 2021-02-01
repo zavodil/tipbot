@@ -1,0 +1,8 @@
+.hints {
+    font-size: 0.8em;
+    color: var(--gray);
+}
+
+.hints li{
+    padding-bottom: 0.4em;
+}
