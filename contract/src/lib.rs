@@ -46,7 +46,7 @@ impl NearTips {
     }
 
     pub fn send_tip_to_telegram(&mut self, telegram_account: String, amount: WrappedBalance) {
-        let account_id = env::signer_account_id();
+        let account_id = env::predecessor_account_id();
         let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
 
         assert!(
@@ -76,6 +76,21 @@ impl NearTips {
 
         env::log(format!("@{} withdrew {} yNEAR from telegram account {}", account_id, balance, telegram_account).as_bytes());
     }
+
+    pub fn withdraw (&mut self) {
+        let account_id = env::predecessor_account_id();
+        let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
+
+        assert!(deposit > 0, "Missing deposit");
+
+        Promise::new(account_id.clone()).transfer(deposit);
+        self.deposits.insert(account_id.clone(), 0);
+
+        env::log(format!("@{} withdrew {} yNEAR from internal deposit", account_id, deposit).as_bytes());
+    }
+
+    // add balance -> deposit for MASTER_ACCOUNT_ID
+    // add linkdrop purchase
 }
 
 /*
@@ -117,27 +132,75 @@ mod tests {
         }
     }
 
+    fn ntoy(near_amount: Balance) -> Balance {
+        near_amount * 10u128.pow(24)
+    }
+
     #[test]
-    fn set_then_get_greeting() {
-        let context = get_context(vec![], false);
-        testing_env!(context);
+    fn test_deposit() {
+        let mut context = get_context(vec![], true);
+        context.is_view = false;
+        context.attached_deposit = ntoy(100);
+        testing_env!(context.clone());
+
         let mut contract = NearTips::default();
-        contract.set_greeting("howdy".to_string());
+        contract.deposit();
+
         assert_eq!(
-            "howdy".to_string(),
-            contract.get_greeting("bob_near".to_string())
+            ntoy(100),
+            contract.get_deposit("carol_near".to_string()).0
         );
     }
 
     #[test]
-    fn get_default_greeting() {
-        let context = get_context(vec![], true);
-        testing_env!(context);
-        let contract = NearTips::default();
-        // this test did not call set_greeting so should return the default "Hello" greeting
+    fn test_withdraw() {
+        let mut context = get_context(vec![], true);
+        context.is_view = false;
+        context.attached_deposit = ntoy(100);
+        testing_env!(context.clone());
+
+        let mut contract = NearTips::default();
+
+        contract.deposit();
+
         assert_eq!(
-            "Hello".to_string(),
-            contract.get_greeting("francis.near".to_string())
+            ntoy(100),
+            contract.get_deposit("carol_near".to_string()).0
+        );
+
+        contract.withdraw();
+        assert_eq!(
+            ntoy(0),
+            contract.get_deposit("carol_near".to_string()).0
+        );
+    }
+
+    #[test]
+    fn test_tip() {
+        let mut context = get_context(vec![], true);
+        context.is_view = false;
+        context.attached_deposit = ntoy(100);
+        testing_env!(context.clone());
+
+        let mut contract = NearTips::default();
+
+        contract.deposit();
+
+        contract.send_tip_to_telegram("123".to_string(), WrappedBalance::from(ntoy(30)));
+        assert_eq!(
+            ntoy(30),
+            contract.get_balance("123".to_string()).0
+        );
+
+        contract.send_tip_to_telegram("123".to_string(), WrappedBalance::from(ntoy(70)));
+        assert_eq!(
+            ntoy(100),
+            contract.get_balance("123".to_string()).0
+        );
+
+        assert_eq!(
+            ntoy(0),
+            contract.get_deposit("carol_near".to_string()).0
         );
     }
 }
