@@ -1,7 +1,9 @@
 import { connect, Contract, keyStores, WalletConnection } from 'near-api-js'
 import getConfig from './config'
+import getAppSettings from './app-settings'
 
 const nearConfig = getConfig(process.env.NODE_ENV || 'development')
+const appSettings = getAppSettings();
 
 // Initialize contract & set global variables
 export async function initContract() {
@@ -20,7 +22,7 @@ export async function initContract() {
     // View methods are read only. They don't modify the state, but usually return some value.
     viewMethods: ['get_deposit'],
     // Change methods can modify the state. But you don't receive the returned value when called.
-    changeMethods: ['deposit'],
+    changeMethods: ['deposit', 'withdraw'],
   })
 }
 
@@ -35,5 +37,5 @@ export function login() {
   // user's behalf.
   // This works by creating a new access key for the user's account and storing
   // the private key in localStorage.
-  window.walletConnection.requestSignIn(nearConfig.contractName)
+  window.walletConnection.requestSignIn(nearConfig.contractName, appSettings.appNme)
 }

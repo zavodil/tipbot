@@ -67,17 +67,18 @@ impl NearTips {
         assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
-        let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0 - WITHDRAW_COMMISSION;
+        let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0;
         assert!(balance > 0, "Nothing to withdraw");
+        assert!(balance > WITHDRAW_COMMISSION, "Not enough tokens to pay withdraw commission");
 
-        Promise::new(account_id.clone()).transfer(balance);
+        Promise::new(account_id.clone()).transfer(balance - WITHDRAW_COMMISSION);
 
         self.telegram_tips.insert(telegram_account.clone(), 0);
 
-        env::log(format!("@{} withdrew {} yNEAR from telegram account {}", account_id, balance, telegram_account).as_bytes());
+        env::log(format!("@{} withdrew {} yNEAR from telegram account {}. Withdraw commission: {} yNEAR", account_id, balance, telegram_account, WITHDRAW_COMMISSION).as_bytes());
     }
 
-    pub fn withdraw (&mut self) {
+    pub fn withdraw(&mut self) {
         let account_id = env::predecessor_account_id();
         let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
 
@@ -89,7 +90,22 @@ impl NearTips {
         env::log(format!("@{} withdrew {} yNEAR from internal deposit", account_id, deposit).as_bytes());
     }
 
-    // add balance -> deposit for MASTER_ACCOUNT_ID
+    pub fn transfer_tips_to_deposit(&mut self, telegram_account: String, account_id: AccountId) {
+        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
+
+        let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0;
+        assert!(balance > 0, "Nothing to transfer");
+        assert!(balance > WITHDRAW_COMMISSION, "Not enough tokens to pay withdraw commission");
+
+        let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
+        self.deposits.insert(account_id.clone(), deposit + balance - WITHDRAW_COMMISSION);
+
+        self.telegram_tips.insert(telegram_account.clone(), 0);
+
+        env::log(format!("@{} transfer {} yNEAR from telegram account {}. Withdraw commission: {} yNEAR", account_id, balance, telegram_account, WITHDRAW_COMMISSION).as_bytes());
+    }
+
     // add linkdrop purchase
 }
 
@@ -110,25 +126,44 @@ mod tests {
     use near_sdk::MockedBlockchain;
     use near_sdk::{testing_env, VMContext};
 
-    // mock the context for testing, notice "signer_account_id" that was accessed above from env::
-    fn get_context(input: Vec<u8>, is_view: bool) -> VMContext {
+    fn alice_account() -> AccountId {
+        MASTER_ACCOUNT_ID.to_string()
+    }
+
+    fn bob_account() -> AccountId {
+        "bob.near".to_string()
+    }
+
+    fn alice_telegram() -> AccountId {
+        "1234".to_string()
+    }
+
+    fn bob_telegram() -> AccountId {
+        "5678".to_string()
+    }
+
+    pub fn get_context(
+        predecessor_account_id: AccountId,
+        attached_deposit: u128,
+        is_view: bool,
+    ) -> VMContext {
         VMContext {
-            current_account_id: "alice_near".to_string(),
-            signer_account_id: "bob_near".to_string(),
+            current_account_id: predecessor_account_id.clone(),
+            signer_account_id: predecessor_account_id.clone(),
             signer_account_pk: vec![0, 1, 2],
-            predecessor_account_id: "carol_near".to_string(),
-            input,
-            block_index: 0,
+            predecessor_account_id,
+            input: vec![],
+            block_index: 1,
             block_timestamp: 0,
+            epoch_height: 1,
             account_balance: 0,
             account_locked_balance: 0,
-            storage_usage: 0,
-            attached_deposit: 0,
-            prepaid_gas: 10u64.pow(18),
+            storage_usage: 10u64.pow(6),
+            attached_deposit,
+            prepaid_gas: 10u64.pow(15),
             random_seed: vec![0, 1, 2],
             is_view,
             output_data_receivers: vec![],
-            epoch_height: 19,
         }
     }
 
@@ -138,9 +173,7 @@ mod tests {
 
     #[test]
     fn test_deposit() {
-        let mut context = get_context(vec![], true);
-        context.is_view = false;
-        context.attached_deposit = ntoy(100);
+        let context = get_context(alice_account(), ntoy(100), false);
         testing_env!(context.clone());
 
         let mut contract = NearTips::default();
@@ -148,15 +181,13 @@ mod tests {
 
         assert_eq!(
             ntoy(100),
-            contract.get_deposit("carol_near".to_string()).0
+            contract.get_deposit(alice_account()).0
         );
     }
 
     #[test]
     fn test_withdraw() {
-        let mut context = get_context(vec![], true);
-        context.is_view = false;
-        context.attached_deposit = ntoy(100);
+        let context = get_context(alice_account(), ntoy(100), false);
         testing_env!(context.clone());
 
         let mut contract = NearTips::default();
@@ -165,42 +196,100 @@ mod tests {
 
         assert_eq!(
             ntoy(100),
-            contract.get_deposit("carol_near".to_string()).0
+            contract.get_deposit(alice_account()).0
         );
 
         contract.withdraw();
         assert_eq!(
             ntoy(0),
-            contract.get_deposit("carol_near".to_string()).0
+            contract.get_deposit(alice_account()).0
         );
     }
 
     #[test]
-    fn test_tip() {
-        let mut context = get_context(vec![], true);
-        context.is_view = false;
-        context.attached_deposit = ntoy(100);
+    fn test_withdraw_from_telegram() {
+        let mut context = get_context(alice_account(), ntoy(30), false);
         testing_env!(context.clone());
 
         let mut contract = NearTips::default();
 
         contract.deposit();
 
-        contract.send_tip_to_telegram("123".to_string(), WrappedBalance::from(ntoy(30)));
+        contract.send_tip_to_telegram(alice_telegram(), WrappedBalance::from(ntoy(30)));
+
+        contract.withdraw_from_telegram(alice_telegram(), alice_account());
+        context.account_balance += ntoy(30) - WITHDRAW_COMMISSION;
+
         assert_eq!(
-            ntoy(30),
-            contract.get_balance("123".to_string()).0
+            ntoy(30) - WITHDRAW_COMMISSION,
+            context.account_balance
         );
 
-        contract.send_tip_to_telegram("123".to_string(), WrappedBalance::from(ntoy(70)));
+        assert_eq!(
+            WITHDRAW_COMMISSION,
+            env::account_balance()
+        );
+
+        assert_eq!(
+            0,
+            contract.get_balance(alice_telegram()).0
+        );
+    }
+
+    #[test]
+    fn test_tip() {
+        let context = get_context(alice_account(), ntoy(100), false);
+        testing_env!(context.clone());
+
+        let mut contract = NearTips::default();
+
+        contract.deposit();
+
+        contract.send_tip_to_telegram(alice_telegram(), WrappedBalance::from(ntoy(30)));
+        assert_eq!(
+            ntoy(30),
+            contract.get_balance(alice_telegram()).0
+        );
+
+        assert_eq!(
+            ntoy(70),
+            contract.get_deposit(alice_account()).0
+        );
+
+        contract.send_tip_to_telegram(alice_telegram(), WrappedBalance::from(ntoy(70)));
         assert_eq!(
             ntoy(100),
-            contract.get_balance("123".to_string()).0
+            contract.get_balance(alice_telegram()).0
         );
 
         assert_eq!(
             ntoy(0),
-            contract.get_deposit("carol_near".to_string()).0
+            contract.get_deposit(alice_account()).0
+        );
+    }
+
+    #[test]
+    fn test_transfer_tips() {
+        let context = get_context(alice_account(), ntoy(100), false);
+        testing_env!(context.clone());
+
+        let mut contract = NearTips::default();
+
+        contract.deposit();
+
+        contract.send_tip_to_telegram(bob_telegram(), WrappedBalance::from(ntoy(30)));
+
+        assert_eq!(
+            ntoy(30),
+            contract.get_balance(bob_telegram()).0
+        );
+
+        contract.transfer_tips_to_deposit(bob_telegram(), bob_account());
+
+
+        assert_eq!(
+            ntoy(30) - WITHDRAW_COMMISSION,
+            contract.get_deposit(bob_account()).0
         );
     }
 }

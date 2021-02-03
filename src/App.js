@@ -12,27 +12,175 @@ import getAppSettings from './app-settings'
 
 const appSettings = getAppSettings();
 const config = getConfig(process.env.NODE_ENV || 'development');
-const networkId = config.networkId;
-
 const FRAC_DIGITS = 5;
 
-function ConvertToYoctoNear(amount) {
-    return new BN(Math.round(amount * 100000000)).mul(new BN("10000000000000000")).toString();
-}
-
 export default function App() {
-    const [deposit, setDeposit] = React.useState(0);
-
-    // when the user has not yet interacted with the form, disable the button
     const [buttonDisabled, setButtonDisabled] = React.useState(true)
-
-    // after submitting the form, we want to show Notification
     const [showNotification, setShowNotification] = React.useState(false)
 
     const navDropdownRef = React.useRef(null);
     const [isNavDropdownActive, setIsNaVDropdownActive] = useDetectOutsideClick(navDropdownRef, false);
 
+    /* APP STATE */
+    const [deposit, setDeposit] = React.useState(0);
+    const [showWithdraw, setShowWithdraw] = React.useState(false)
+
+    /* APP */
+    const GetDeposit = async () => {
+        const deposit = await window.contract.get_deposit({
+            account_id: window.accountId
+        });
+        setShowWithdraw(deposit > 0);
+        const depositFormatted = nearAPI.utils.format.formatNearAmount(deposit, FRAC_DIGITS);
+        setDeposit(depositFormatted);
+        return depositFormatted;
+    };
+
+    const AppContent = () => {
+        return (
+            <>
+                <Header/>
+                <main>
+                    <div className="background-img"/>
+                    <h1>
+                        NEAR Tips
+                    </h1>
+                    <form onSubmit={async event => {
+                        event.preventDefault()
+
+                        const {fieldset, deposit} = event.target.elements;
+                        const newDeposit = deposit.value;
+
+                        fieldset.disabled = true
+
+                        try {
+                            await window.contract.deposit({}, 300000000000000, ConvertToYoctoNear(newDeposit))
+                        } catch (e) {
+                            ContractCallAlert();
+                            throw e
+                        } finally {
+                            fieldset.disabled = false
+                        }
+
+                        setDeposit(newDeposit)
+                        setShowNotification({method: "call", data: "deposit"});
+                        setTimeout(() => {
+                            setShowNotification(false)
+                        }, 11000)
+                    }}>
+                        <fieldset id="fieldset">
+                            <label
+                                htmlFor="deposit"
+                                style={{
+                                    display: 'block',
+                                    color: 'var(--gray)',
+                                    marginBottom: '0.5em'
+                                }}
+                            >
+                                Deposit tokens to the app and you will be able to send tips in telegram:
+                            </label>
+                            <div style={{display: 'flex'}}>
+                                <input
+                                    autoComplete="off"
+                                    defaultValue="0"
+                                    id="deposit"
+                                    onChange={e => setButtonDisabled(!parseFloat(e.target.value))}
+                                    style={{flex: 1}}
+                                />
+                                <button
+                                    disabled={buttonDisabled}
+                                    style={{borderRadius: '0 5px 5px 0'}}
+                                >
+                                    Deposit
+                                </button>
+                            </div>
+                        </fieldset>
+                    </form>
+                    <div className={"hints"}>
+                        <ul>
+                            <li>Deposit some NEAR on this website</li>
+                            <li>Go to <a href={"https://t.me/nearup_bot"}>@nearup_bot</a></li>
+                            <li>Login with <code>/login</code> command, connect to <code>{config.networkId}</code> and
+                                grant access
+                                to the contract <code>{config.contractName}</code></li>
+                            <li>Go to NEAR chats with @nearup_bot and reply to any message with text <code>/tip
+                                N</code> to
+                                send N NEAR (e.g. <code>/tip 0.1</code>, <code>/tip 1</code>)
+                            </li>
+                            <li>Telegram user can check his tips balance at <a
+                                href={"https://t.me/nearup_bot"}>@nearup_bot</a> with the
+                                command <code>/mytips</code> and
+                                withdraw rewards with the command <code>/withdraw</code>.
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div className="actions">
+                        {showWithdraw && <button
+                            style={{borderRadius: '5px'}}
+                            onClick={async event => {
+                                try {
+                                    // make an update call to the smart contract
+                                    await window.contract.withdraw({}, 300000000000000)
+                                } catch (e) {
+                                    ContractCallAlert();
+                                    throw e
+                                }
+
+                                setShowNotification({method: "call", data: "withdraw"})
+
+                                setTimeout(() => {
+                                    setShowNotification(false)
+                                }, 11000)
+
+                                await GetDeposit()
+                            }
+                            }
+                        >
+                            Withdraw
+                        </button>}
+                    </div>
+                </main>
+                <Footer/>
+                {showNotification && Object.keys(showNotification) &&
+                <Notification method={showNotification.method} data={showNotification.data}/>}
+            </>
+        );
+    }
+
     /* HEADER */
+    const Header = () => {
+        return <div className="nav-container">
+            <div className="nav-header">
+                <NearLogo/>
+                <div className="nav-item user-name">{window.accountId}</div>
+                <Deposit/>
+                <div className="nav align-right">
+                    <NavMenu/>
+                    <div className="account-sign-out">
+                        <button className="link" style={{float: 'right'}} onClick={logout}>
+                            Sign out
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    };
+
+    const Footer = () => {
+        return <div className="footer">
+            <div className="github">
+                <div className="build-on-near"><a href="https://nearspace.info">BUILD ON NEAR</a></div>
+                <div className="brand">NEAR {appSettings.appNme} | <a href={appSettings.github}
+                                                                      rel="nofollow"
+                                                                      target="_blank">Open Source</a></div>
+            </div>
+            <div className="promo">
+                Made by <a href="https://near.zavodil.ru/" rel="nofollow" target="_blank">Zavodil node</a>
+            </div>
+        </div>
+    };
+
     const Deposit = () => {
         return deposit && Number(deposit) ?
             <div className="nav user-balance" data-tip="Your internal balance in Multisender App">
@@ -97,186 +245,88 @@ export default function App() {
         );
     };
 
-
-    /* APP */
-    const GetDeposit = async () => {
-        const deposit = await window.contract.get_deposit({
-            account_id: window.accountId
-        });
-        const depositFormatted = nearAPI.utils.format.formatNearAmount(deposit, FRAC_DIGITS);
-        setDeposit(depositFormatted);
-        return depositFormatted;
-    };
-
-    // The useEffect hook can be used to fire side-effects during render
-    // Learn more: https://reactjs.org/docs/hooks-intro.html
     React.useEffect(
         async () => {
-            // in this case, we only care to query the contract when signed in
             if (window.walletConnection.isSignedIn()) {
                 await GetDeposit()
             }
         },
-
         // The second argument to useEffect tells React when to re-run the effect
         // Use an empty array to specify "only run on first render"
         // This works because signing into NEAR Wallet reloads the page
         []
-    )
+    );
 
-    // if not signed in, return early with sign-in prompt
     if (!window.walletConnection.isSignedIn()) {
         return (
-            <main>
-                <h1>NEAR Tips</h1>
-                <p>
-                    Sends tip in NEAR tokens direct in Telegram!
-                </p>
-                <p>
-                    To make use of the NEAR blockchain, you need to sign in. The button
-                    below will sign you in using NEAR Wallet.
-                </p>
-                <p style={{textAlign: 'center', marginTop: '2.5em'}}>
-                    <button onClick={login}>Sign in</button>
-                </p>
-            </main>
+            <>
+                <Header/>
+                <main>
+                    <h1>{appSettings.appNme}</h1>
+                    <p>
+                        {appSettings.appDescription}
+                    </p>
+                    <p>
+                        To make use of the NEAR blockchain, you need to sign in. The button
+                        below will sign you in using NEAR Wallet.
+                    </p>
+                    <p style={{textAlign: 'center', marginTop: '2.5em'}}>
+                        <button onClick={login}>Sign in</button>
+                    </p>
+                </main>
+                <Footer/>
+            </>
         )
     }
 
     return (
-        // use React Fragment, <>, to avoid wrapping elements in unnecessary divs
-        <>
-            <div className="nav-container">
-                <div className="nav-header">
-                    <NearLogo/>
-                    <div className="nav-item user-name">{window.accountId}</div>
-                    <Deposit/>
-                    <div className="nav align-right">
-                        <NavMenu/>
-                        <div className="account-sign-out">
-                            <button className="link" style={{float: 'right'}} onClick={logout}>
-                                Sign out
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <main>
-                <div className="background-img"></div>
-                <h1>
-                    NEAR Tips
-                </h1>
-                <form onSubmit={async event => {
-                    event.preventDefault()
-
-                    // get elements from the form using their id attribute
-                    const {fieldset, deposit} = event.target.elements;
-
-                    const newDeposit = deposit.value;
-
-                    // disable the form while the value gets updated on-chain
-                    fieldset.disabled = true
-
-                    try {
-                        // make an update call to the smart contract
-                        await window.contract.deposit({
-                        }, 300000000000000, ConvertToYoctoNear(newDeposit))
-                    } catch (e) {
-                        alert(
-                            'Something went wrong! ' +
-                            'Maybe you need to sign out and back in? ' +
-                            'Check your browser console for more info.'
-                        )
-                        throw e
-                    } finally {
-                        // re-enable the form, whether the call succeeded or failed
-                        fieldset.disabled = false
-                    }
-
-                    // update local `greeting` variable to match persisted value
-                    set_deposit(newDeposit)
-
-                    // show Notification
-                    setShowNotification(true)
-
-                    // remove Notification again after css animation completes
-                    // this allows it to be shown again next time the form is submitted
-                    setTimeout(() => {
-                        setShowNotification(false)
-                    }, 11000)
-                }}>
-                    <fieldset id="fieldset">
-                        <label
-                            htmlFor="deposit"
-                            style={{
-                                display: 'block',
-                                color: 'var(--gray)',
-                                marginBottom: '0.5em'
-                            }}
-                        >
-                            Deposit tokens to the app and you will be able to make tips in telegram:
-                        </label>
-                        <div style={{display: 'flex'}}>
-                            <input
-                                autoComplete="off"
-                                defaultValue="0"
-                                id="deposit"
-                                onChange={e => setButtonDisabled(!parseFloat(e.target.value))}
-                                style={{flex: 1}}
-                            />
-                            <button
-                                disabled={buttonDisabled}
-                                style={{borderRadius: '0 5px 5px 0'}}
-                            >
-                                Deposit
-                            </button>
-                        </div>
-                    </fieldset>
-                </form>
-                <div className={"hints"}>
-                    <ul>
-                        <li>Deposit some NEAR on this website</li>
-                        <li>Go to <a href={"https://t.me/nearup_bot"}>@nearup_bot</a></li>
-                        <li>Login with <code>/login</code> command, connect to <code>{networkId}</code> and grant access to the contract <code>{config.contractName}</code></li>
-                        <li>Go to NEAR chats with @nearup_bot and reply to any message with text <code>/tip N</code> to send N NEAR (e.g. <code>/tip 0.1</code>, <code>/tip 1</code>)</li>
-                        <li>Telegram user can check his tips balance at <a href={"https://t.me/nearup_bot"}>@nearup_bot</a> with the command <code>/mytips</code> and withdraw rewards with the command <code>/withdraw</code>.</li>
-                    </ul>
-                </div>
-            </main>
-            <div className="footer">
-                <div className="github">
-                    <div className="build-on-near"><a href="https://nearspace.info">BUILD ON NEAR</a></div>
-                    <div className="brand">NEAR {appSettings.appNme} | <a href={appSettings.github}
-                                                                      rel="nofollow"
-                                                                      target="_blank">Open Source</a></div>
-                </div>
-                <div className="promo">
-                    Made by <a href="https://near.zavodil.ru/" rel="nofollow" target="_blank">Zavodil node</a>
-                </div>
-            </div>
-            {showNotification && <Notification/>}
-        </>
-    )
+        <AppContent/>
+    );
 }
 
-// this component gets rendered by App after the form is submitted
-function Notification() {
-    const urlPrefix = `https://explorer.${networkId}.near.org/accounts`
-    return (
-        <aside>
-            <a target="_blank" rel="noreferrer" href={`${urlPrefix}/${window.accountId}`}>
-                {window.accountId}
-            </a>
-            {' '/* React trims whitespace around tags; insert literal space character when needed */}
-            called method: 'deposit' in contract:
-            {' '}
-            <a target="_blank" rel="noreferrer" href={`${urlPrefix}/${window.contract.contractId}`}>
-                {window.contract.contractId}
-            </a>
-            <footer>
-                <div>✔ Succeeded</div>
-                <div>Just now</div>
-            </footer>
-        </aside>
-    )
+function Notification(props) {
+    const urlPrefix = `https://explorer.${config.networkId}.near.org/accounts`
+    if (props.method === "call")
+        return (
+            <aside>
+                <a target="_blank" rel="noreferrer" href={`${urlPrefix}/${window.accountId}`}>
+                    {window.accountId}
+                </a>
+                {' '/* React trims whitespace around tags; insert literal space character when needed */}
+                called method: '{props.data}' in contract:
+                {' '}
+                <a target="_blank" rel="noreferrer" href={`${urlPrefix}/${window.contract.contractId}`}>
+                    {window.contract.contractId}
+                </a>
+                <footer>
+                    <div>✔ Succeeded</div>
+                    <div>Just now</div>
+                </footer>
+            </aside>
+        );
+    else if (props.method === "text")
+        return (
+            <aside>
+                {props.data}
+                <footer>
+                    <div>✔ Succeeded</div>
+                    <div>Just now</div>
+                </footer>
+            </aside>
+        );
+    else return (
+            <aside/>
+        );
+}
+
+function ConvertToYoctoNear(amount) {
+    return new BN(Math.round(amount * 100000000)).mul(new BN("10000000000000000")).toString();
+}
+
+function ContractCallAlert() {
+    alert(
+        'Something went wrong! ' +
+        'Maybe you need to sign out and back in? ' +
+        'Check your browser console for more info.'
+    );
 }

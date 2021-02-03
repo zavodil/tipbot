@@ -6,3 +6,8 @@
 .hints li{
     padding-bottom: 0.4em;
 }
+
+.actions{
+    padding: 20px 0;
+    border-top: 1px solid var(--gray);
+}
