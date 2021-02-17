@@ -1,13 +1,21 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::wee_alloc;
-use near_sdk::{env, near_bindgen, AccountId, Balance, Promise};
+use near_sdk::{env, near_bindgen, AccountId, Balance, Promise,  Gas, ext_contract, PromiseResult};
 use near_sdk::json_types::U128;
 use std::collections::HashMap;
 
 pub type WrappedBalance = U128;
 
-const MASTER_ACCOUNT_ID: &str = "zavodil.testnet";
+const MASTER_ACCOUNT_ID: &str = "zavodil.testnet"; // telegram bot master account id
 const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000; // 0.003 NEAR
+const ACCESS_KEY_ALLOWANCE: Balance = 1_000_000_000_000_000_000_000_000;
+const BASE_GAS: Gas = 25_000_000_000_000;
+const NO_DEPOSIT: Balance = 0;
+
+#[ext_contract(linkdrop)]
+pub trait ExtLinkdrop {
+    fn send(&self, public_key: String);
+}
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -21,8 +29,32 @@ pub struct NearTips {
     telegram_tips: HashMap<String, Balance>,
 }
 
+#[ext_contract(ext_self)]
+pub trait ExtNearTips {
+    fn on_withdraw_from_telegram(&mut self, predecessor_account_id: AccountId, amount: Balance, telegram_account: String) -> bool;
+    fn on_withdraw(&mut self, predecessor_account_id: AccountId, deposit: Balance) -> bool;
+    fn on_withdraw_linkdrop(&mut self, amount: Balance, telegram_account: String, public_key: String) -> bool;
+}
+
+fn is_promise_success() -> bool {
+    assert_eq!(
+        env::promise_results_count(),
+        1,
+        "Contract expected a result on the callback"
+    );
+    match env::promise_result(0) {
+        PromiseResult::Successful(_) => true,
+        _ => false,
+    }
+}
+
 #[near_bindgen]
 impl NearTips {
+    fn get_linkdrop_contract() -> String {
+        //  linkdrop.zavodil.testnet???????? for Mainnet, linkdrop.zavodil.testnet for Testnet
+        "linkdrop.zavodil.testnet".to_string()
+    }
+
     #[payable]
     pub fn deposit(&mut self) {
         let account_id: AccountId = env::predecessor_account_id();
@@ -63,7 +95,7 @@ impl NearTips {
         env::log(format!("@{} tipped {} yNEAR for telegram account {}", account_id, amount.0, telegram_account).as_bytes());
     }
 
-    pub fn withdraw_from_telegram(&mut self, telegram_account: String, account_id: AccountId) {
+    pub fn withdraw_from_telegram(&mut self, telegram_account: String, account_id: AccountId) -> Promise {
         assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
@@ -71,23 +103,105 @@ impl NearTips {
         assert!(balance > 0, "Nothing to withdraw");
         assert!(balance > WITHDRAW_COMMISSION, "Not enough tokens to pay withdraw commission");
 
-        Promise::new(account_id.clone()).transfer(balance - WITHDRAW_COMMISSION);
-
-        self.telegram_tips.insert(telegram_account.clone(), 0);
-
-        env::log(format!("@{} withdrew {} yNEAR from telegram account {}. Withdraw commission: {} yNEAR", account_id, balance, telegram_account, WITHDRAW_COMMISSION).as_bytes());
+        let amount = balance - WITHDRAW_COMMISSION;
+        Promise::new(account_id.clone())
+            .transfer(amount)
+            .then(ext_self::on_withdraw_from_telegram(
+                env::predecessor_account_id(),
+                amount,
+                telegram_account,
+                &env::current_account_id(),
+                NO_DEPOSIT,
+                BASE_GAS,
+            ))
     }
 
-    pub fn withdraw(&mut self) {
+    pub fn on_withdraw_from_telegram(&mut self, predecessor_account_id: AccountId, amount: Balance, telegram_account: String) -> bool {
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Callback can only be called from the contract"
+        );
+        let creation_succeeded = is_promise_success();
+        if creation_succeeded {
+            self.telegram_tips.insert(telegram_account.clone(), 0);
+            Promise::new(MASTER_ACCOUNT_ID.to_string()).transfer(WITHDRAW_COMMISSION);
+
+            env::log(format!("@{} withdrew {} yNEAR from telegram account {}. Withdraw commission: {} yNEAR",
+                             predecessor_account_id, amount, telegram_account, WITHDRAW_COMMISSION).as_bytes());
+        }
+
+        creation_succeeded
+    }
+
+    pub fn withdraw(&mut self) -> Promise {
         let account_id = env::predecessor_account_id();
         let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
 
         assert!(deposit > 0, "Missing deposit");
 
-        Promise::new(account_id.clone()).transfer(deposit);
-        self.deposits.insert(account_id.clone(), 0);
+        Promise::new(account_id.clone())
+            .transfer(deposit)
+            .then(ext_self::on_withdraw(
+                account_id,
+                deposit,
+                &env::current_account_id(),
+                NO_DEPOSIT,
+                BASE_GAS,
+            ))
 
-        env::log(format!("@{} withdrew {} yNEAR from internal deposit", account_id, deposit).as_bytes());
+    }
+
+    pub fn on_withdraw(&mut self, predecessor_account_id: AccountId, deposit: Balance) -> bool {
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Callback can only be called from the contract"
+        );
+        let creation_succeeded = is_promise_success();
+        if creation_succeeded {
+            self.deposits.insert(predecessor_account_id.clone(), 0);
+
+            env::log(format!("@{} withdrew {} yNEAR from internal deposit", predecessor_account_id, deposit).as_bytes());
+        }
+
+        creation_succeeded
+    }
+
+    pub fn withdraw_linkdrop(&mut self, public_key: String, telegram_account: String) -> Promise {
+        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0;
+        assert!(balance > WITHDRAW_COMMISSION + ACCESS_KEY_ALLOWANCE, "Not enough tokens to pay for key allowance and withdraw commission");
+
+        let amount = balance - WITHDRAW_COMMISSION;
+        linkdrop::send(public_key.clone(), &NearTips::get_linkdrop_contract(), amount, BASE_GAS).
+            then(ext_self::on_withdraw_linkdrop(
+            amount,
+            telegram_account,
+            public_key,
+            &env::current_account_id(),
+            NO_DEPOSIT,
+            BASE_GAS,
+        ))
+    }
+
+    pub fn on_withdraw_linkdrop(&mut self, amount: Balance, telegram_account: String, public_key: String) -> bool {
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Callback can only be called from the contract"
+        );
+        let creation_succeeded = is_promise_success();
+        if creation_succeeded {
+            self.telegram_tips.insert(telegram_account.clone(), 0);
+            Promise::new(MASTER_ACCOUNT_ID.to_string()).transfer(WITHDRAW_COMMISSION);
+
+            env::log(format!("Telegram account {} withdrew {} yNEAR with linkDrop for public key {}. Withdraw commission: {} yNEAR",
+                             telegram_account, amount, public_key, WITHDRAW_COMMISSION).as_bytes());
+
+        }
+
+        creation_succeeded
     }
 
     pub fn transfer_tips_to_deposit(&mut self, telegram_account: String, account_id: AccountId) {
@@ -103,7 +217,8 @@ impl NearTips {
 
         self.telegram_tips.insert(telegram_account.clone(), 0);
 
-        env::log(format!("@{} transfer {} yNEAR from telegram account {}. Withdraw commission: {} yNEAR", account_id, balance, telegram_account, WITHDRAW_COMMISSION).as_bytes());
+        env::log(format!("@{} transfer {} yNEAR from telegram account {}. Withdraw commission: {} yNEAR",
+                         account_id, balance, telegram_account, WITHDRAW_COMMISSION).as_bytes());
     }
 
     // add linkdrop purchase
