@@ -100,9 +100,8 @@ export default function App() {
                         <ul>
                             <li>Deposit some NEAR on this website</li>
                             <li>Go to <a href={"https://t.me/nearup_bot"}>@nearup_bot</a></li>
-                            <li>Login with <code>/login</code> command, connect to <code>{config.networkId}</code> and
-                                grant access
-                                to the contract <code>{config.contractName}</code></li>
+                            <li>Login with <code>/loginTipBot</code> command, connect to <code>{config.networkId}</code>. You will
+                                grant a limited access to the contract <code>{config.contractName}</code></li>
                             <li>Go to NEAR chats with @nearup_bot and reply to any message with text <code>/tip
                                 N</code> to
                                 send N NEAR (e.g. <code>/tip 0.1</code>, <code>/tip 1</code>)

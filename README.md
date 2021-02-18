@@ -1,17 +1,3 @@
-export NODE_ENV=testnet && export CONTRACT_ID="dev-1611766930309-7632660"
-
-near call $CONTRACT_ID deposit '{}' --accountId=zavodil.testnet --amount 1
-near view $CONTRACT_ID get_deposit '{"account_id":"zavodil.testnet"}'
-near call $CONTRACT_ID send_tip_to_telegram '{"telegram_account": "85770891", "amount": "1000000000000000000000000"}' --accountId=zavodil.testnet
-near view $CONTRACT_ID get_balance '{"telegram_account":"123"}'
-near call $CONTRACT_ID withdraw_from_telegram  '{"telegram_account":"123"}' --accountId=zavodil.testnet
-
-
-
-TODO:
-Tests
-Structure Tips in Hashatable
-
 tipbot 
 ------------------
 

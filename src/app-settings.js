@@ -4,7 +4,7 @@ function appSettings() {
         urlTestnet: "https://tips.multisender.nearspace.info/",
         appNme: "Tips",
         appDescription: "Sends tip in NEAR tokens direct in Telegram",
-        github: "https://github.com/zavodil/near-tipbot",
+        github: "https://github.com/zavodil/tipbot",
     };
 }
 

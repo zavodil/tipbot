@@ -20,8 +20,6 @@ pub trait ExtLinkdrop {
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-// Structs in Rust are similar to other languages, and may include impl keyword as shown below
-// Note: the names of the structs are not important when calling the smart contract, but the function names are
 #[near_bindgen]
 #[derive(Default, BorshDeserialize, BorshSerialize)]
 pub struct NearTips {
@@ -51,7 +49,7 @@ fn is_promise_success() -> bool {
 #[near_bindgen]
 impl NearTips {
     fn get_linkdrop_contract() -> String {
-        //  linkdrop.zavodil.testnet???????? for Mainnet, linkdrop.zavodil.testnet for Testnet
+        //  linkdrop.near ??????? for Mainnet, linkdrop.zavodil.testnet for Testnet
         "linkdrop.zavodil.testnet".to_string()
     }
 
@@ -100,7 +98,6 @@ impl NearTips {
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
         let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0;
-        assert!(balance > 0, "Nothing to withdraw");
         assert!(balance > WITHDRAW_COMMISSION, "Not enough tokens to pay withdraw commission");
 
         let amount = balance - WITHDRAW_COMMISSION;
@@ -122,8 +119,8 @@ impl NearTips {
             env::current_account_id(),
             "Callback can only be called from the contract"
         );
-        let creation_succeeded = is_promise_success();
-        if creation_succeeded {
+        let withdraw_succeeded = is_promise_success();
+        if withdraw_succeeded {
             self.telegram_tips.insert(telegram_account.clone(), 0);
             Promise::new(MASTER_ACCOUNT_ID.to_string()).transfer(WITHDRAW_COMMISSION);
 
@@ -131,7 +128,7 @@ impl NearTips {
                              predecessor_account_id, amount, telegram_account, WITHDRAW_COMMISSION).as_bytes());
         }
 
-        creation_succeeded
+        withdraw_succeeded
     }
 
     pub fn withdraw(&mut self) -> Promise {
@@ -158,14 +155,14 @@ impl NearTips {
             env::current_account_id(),
             "Callback can only be called from the contract"
         );
-        let creation_succeeded = is_promise_success();
-        if creation_succeeded {
+        let withdraw_succeeded = is_promise_success();
+        if withdraw_succeeded {
             self.deposits.insert(predecessor_account_id.clone(), 0);
 
             env::log(format!("@{} withdrew {} yNEAR from internal deposit", predecessor_account_id, deposit).as_bytes());
         }
 
-        creation_succeeded
+        withdraw_succeeded
     }
 
     pub fn withdraw_linkdrop(&mut self, public_key: String, telegram_account: String) -> Promise {
@@ -191,8 +188,8 @@ impl NearTips {
             env::current_account_id(),
             "Callback can only be called from the contract"
         );
-        let creation_succeeded = is_promise_success();
-        if creation_succeeded {
+        let withdraw_succeeded = is_promise_success();
+        if withdraw_succeeded {
             self.telegram_tips.insert(telegram_account.clone(), 0);
             Promise::new(MASTER_ACCOUNT_ID.to_string()).transfer(WITHDRAW_COMMISSION);
 
@@ -201,7 +198,7 @@ impl NearTips {
 
         }
 
-        creation_succeeded
+        withdraw_succeeded
     }
 
     pub fn transfer_tips_to_deposit(&mut self, telegram_account: String, account_id: AccountId) {
@@ -209,7 +206,6 @@ impl NearTips {
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
         let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0;
-        assert!(balance > 0, "Nothing to transfer");
         assert!(balance > WITHDRAW_COMMISSION, "Not enough tokens to pay withdraw commission");
 
         let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
@@ -220,21 +216,8 @@ impl NearTips {
         env::log(format!("@{} transfer {} yNEAR from telegram account {}. Withdraw commission: {} yNEAR",
                          account_id, balance, telegram_account, WITHDRAW_COMMISSION).as_bytes());
     }
-
-    // add linkdrop purchase
 }
 
-/*
- * The rest of this file holds the inline tests for the code above
- * Learn more about Rust tests: https://doc.rust-lang.org/book/ch11-01-writing-tests.html
- *
- * To run from contract directory:
- * cargo test -- --nocapture
- *
- * From project root, to run in combination with frontend tests:
- * yarn test
- *
- */
 #[cfg(test)]
 mod tests {
     use super::*;
