@@ -15,13 +15,14 @@ const config = getConfig(process.env.NODE_ENV || 'development');
 const FRAC_DIGITS = 5;
 
 export default function App() {
-    const [buttonDisabled, setButtonDisabled] = React.useState(true)
+    const [buttonDisabled, setButtonDisabled] = React.useState(false)
     const [showNotification, setShowNotification] = React.useState(false)
 
     const navDropdownRef = React.useRef(null);
     const [isNavDropdownActive, setIsNaVDropdownActive] = useDetectOutsideClick(navDropdownRef, false);
 
     /* APP STATE */
+    const [input, setInput] = React.useState(5);
     const [deposit, setDeposit] = React.useState(0);
     const [showWithdraw, setShowWithdraw] = React.useState(false)
 
@@ -36,6 +37,11 @@ export default function App() {
         return depositFormatted;
     };
 
+    const inputChange = (value) => {
+        setInput(value);
+        setButtonDisabled(!parseFloat(value) || parseFloat(value) < 0);
+    };
+
     const AppContent = () => {
         return (
             <>
@@ -48,25 +54,27 @@ export default function App() {
                     <form onSubmit={async event => {
                         event.preventDefault()
 
-                        const {fieldset, deposit} = event.target.elements;
-                        const newDeposit = deposit.value;
+                        const {fieldset} = event.target.elements;
+                        const newDeposit = input;
 
-                        fieldset.disabled = true
+                        if (parseFloat(newDeposit) > 0) {
+                            fieldset.disabled = true
 
-                        try {
-                            await window.contract.deposit({}, 300000000000000, ConvertToYoctoNear(newDeposit))
-                        } catch (e) {
-                            ContractCallAlert();
-                            throw e
-                        } finally {
-                            fieldset.disabled = false
+                            try {
+                                await window.contract.deposit({}, 300000000000000, ConvertToYoctoNear(newDeposit))
+                            } catch (e) {
+                                ContractCallAlert();
+                                throw e
+                            } finally {
+                                fieldset.disabled = false
+                            }
+
+                            setDeposit(newDeposit)
+                            setShowNotification({method: "call", data: "deposit"});
+                            setTimeout(() => {
+                                setShowNotification(false)
+                            }, 11000)
                         }
-
-                        setDeposit(newDeposit)
-                        setShowNotification({method: "call", data: "deposit"});
-                        setTimeout(() => {
-                            setShowNotification(false)
-                        }, 11000)
                     }}>
                         <fieldset id="fieldset">
                             <label
@@ -81,10 +89,11 @@ export default function App() {
                             </label>
                             <div style={{display: 'flex'}}>
                                 <input
+                                    autoFocus
                                     autoComplete="off"
-                                    defaultValue="0"
+                                    defaultValue={input}
                                     id="deposit"
-                                    onChange={e => setButtonDisabled(!parseFloat(e.target.value))}
+                                    onChange={e => inputChange(e.target.value)}
                                     style={{flex: 1}}
                                 />
                                 <button
@@ -100,11 +109,12 @@ export default function App() {
                         <ul>
                             <li>Deposit some NEAR on this website</li>
                             <li>Go to <a href={"https://t.me/nearup_bot"}>@nearup_bot</a></li>
-                            <li>Login with <code>/loginTipBot</code> command, connect to <code>{config.networkId}</code>. You will
+                            <li>Login with <code>/loginTipBot</code> command, connect to <code>{config.networkId}</code>.
+                                You will
                                 grant a limited access to the contract <code>{config.contractName}</code></li>
-                            <li>Go to NEAR chats with @nearup_bot and reply to any message with text <code>/tip
+                            <li>Go to NEAR chats with @nearup_bot and reply to any message with text <code>/near
                                 N</code> to
-                                send N NEAR (e.g. <code>/tip 0.1</code>, <code>/tip 1</code>)
+                                send N NEAR (e.g. <code>/near 0.1</code>, <code>/near 1</code>)
                             </li>
                             <li>Telegram user can check his tips balance at <a
                                 href={"https://t.me/nearup_bot"}>@nearup_bot</a> with the

@@ -6,7 +6,8 @@ use std::collections::HashMap;
 
 pub type WrappedBalance = U128;
 
-const MASTER_ACCOUNT_ID: &str = "zavodil.testnet"; // telegram bot master account id
+const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near"; // telegram bot master account id
+//const MASTER_ACCOUNT_ID: &str = "zavodil.testnet"; // testnet
 const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000; // 0.003 NEAR
 const ACCESS_KEY_ALLOWANCE: Balance = 1_000_000_000_000_000_000_000_000;
 const BASE_GAS: Gas = 25_000_000_000_000;
@@ -49,8 +50,8 @@ fn is_promise_success() -> bool {
 #[near_bindgen]
 impl NearTips {
     fn get_linkdrop_contract() -> String {
-        //  linkdrop.near ??????? for Mainnet, linkdrop.zavodil.testnet for Testnet
-        "linkdrop.zavodil.testnet".to_string()
+        "near".to_string() // mainnet
+        //"linkdrop.zavodil.testnet".to_string() // testnet
     }
 
     #[payable]
