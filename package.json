@@ -6,7 +6,7 @@
     "build": "npm run build:contract && npm run build:web",
     "build:contract": "node contract/compile.js",
     "build:contract:debug": "node contract/compile.js --debug",
-    "build:web": "export NODE_ENV=mainnet && rm -r mainnet && parcel build src/index.html --public-url ./ && mv dist mainnet",
+    "build:web": "export NODE_ENV=mainnet && rm -rf mainnet && parcel build src/index.html --public-url ./ && mv dist mainnet",
     "dev:deploy:contract": "near dev-deploy",
     "deploy:contract": "near deploy",
     "deploy:pages": "gh-pages -d dist/",
@@ -40,7 +40,8 @@
     "near-api-js": "~0.36.3",
     "react": "~17.0.1",
     "react-dom": "~17.0.1",
-    "regenerator-runtime": "~0.13.5"
+    "regenerator-runtime": "~0.13.5",
+    "react-dropdown": "~1.9.2"
   },
   "jest": {
     "moduleNameMapper": {

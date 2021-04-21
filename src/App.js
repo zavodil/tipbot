@@ -1,7 +1,9 @@
 import 'regenerator-runtime/runtime'
 import React from 'react'
-import {login, logout} from './utils'
+import {login, logout, getContractAddress} from './utils'
 import * as nearAPI from 'near-api-js'
+import Dropdown from 'react-dropdown';
+import 'react-dropdown/style.css';
 import {BN} from 'bn.js'
 import './global.css'
 import './app.css'
@@ -13,10 +15,15 @@ import getAppSettings from './app-settings'
 const appSettings = getAppSettings();
 const config = getConfig(process.env.NODE_ENV || 'development');
 const FRAC_DIGITS = 5;
+const defaultFT = "USDT";
 
 export default function App() {
     const [buttonDisabled, setButtonDisabled] = React.useState(false)
     const [showNotification, setShowNotification] = React.useState(false)
+
+    const [token, setToken] = React.useState(defaultFT)
+    const [tokenBalance, setTokenBalance] = React.useState(0)
+    const [storageBalance, setStorageBalance] = React.useState({});
 
     const navDropdownRef = React.useRef(null);
     const [isNavDropdownActive, setIsNaVDropdownActive] = useDetectOutsideClick(navDropdownRef, false);
@@ -149,6 +156,32 @@ export default function App() {
                             Withdraw
                         </button>}
                     </div>
+
+
+                    <h4>Fungible Tokens monitor</h4>
+
+                    <div style={{paddingBottom: 200}}>
+                        <div style={{display: 'flex'}}>
+                        <Dropdown
+                            options={dropdownOptions}
+                            onChange={e => ChangeToken(e.value)}
+                            value={token}
+                            placeholder="Select an option"/>
+
+                        <input
+                            autoComplete="off"
+                            value={tokenBalance}
+                            readOnly
+                            onChange={e => {
+                                setTokenBalance(e.target.value);
+                                setButtonDisabled(!(parseFloat(e.target.value) > 0));
+                            }}
+                            id="balance"
+                            style={{flex: 1}}
+                        />
+                        </div>
+                        <StorageBalance />
+                    </div>
                 </main>
                 <Footer/>
                 {showNotification && Object.keys(showNotification) &&
@@ -156,6 +189,44 @@ export default function App() {
             </>
         );
     }
+
+    const dropdownOptions = Object.keys(window.tokens);
+
+    const ChangeToken = async (token) => {
+        await get_balance(token);
+        await get_storage(token);
+    };
+
+    const get_storage = (token) => {
+        window.token_contracts[token].storage_balance_of({
+            account_id: window.accountId
+        })
+            .then(storage_balance => {
+                setStorageBalance(storage_balance);
+            });
+
+        setToken(token);
+    }
+
+    const get_balance = (token) => {
+        window.token_contracts[token].ft_balance_of({
+            account_id: window.accountId
+        })
+            .then(balance => {
+                console.log(`Balance of ${token} (${window.tokens[token].address}) is ${balance}`)
+                balance = balance / Math.pow(10, window.tokens[token].decimals);
+                setTokenBalance(balance);
+            });
+
+        setToken(token);
+    }
+
+    const StorageBalance = () => {
+        return storageBalance ?
+            <div>Storage balance found. Total: {nearAPI.utils.format.formatNearAmount(storageBalance.total, FRAC_DIGITS)},
+                Unbonded: {nearAPI.utils.format.formatNearAmount(storageBalance.available, FRAC_DIGITS)}.</div>
+            : <div>Storage balance not found</div>
+    };
 
     /* HEADER */
     const Header = () => {
@@ -257,7 +328,8 @@ export default function App() {
     React.useEffect(
         async () => {
             if (window.walletConnection.isSignedIn()) {
-                await GetDeposit()
+                await GetDeposit();
+                await ChangeToken(defaultFT);
             }
         },
         // The second argument to useEffect tells React when to re-run the effect

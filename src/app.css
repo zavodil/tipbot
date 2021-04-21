@@ -11,3 +11,11 @@
     padding: 20px 0;
     border-top: 1px solid var(--gray);
 }
+
+.Dropdown-control{
+    background-color: var(--shadow) !important;
+}
+
+.Dropdown-arrow{
+    margin-top: 8px;
+}
