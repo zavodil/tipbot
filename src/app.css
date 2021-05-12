@@ -1,21 +1,93 @@
-.hints {
-    font-size: 0.8em;
-    color: var(--gray);
+.Dropdown-root{
+    width: 150px;
 }
 
-.hints li{
-    padding-bottom: 0.4em;
-}
-
-.actions{
-    padding: 20px 0;
-    border-top: 1px solid var(--gray);
+.Dropdown-arrow{
+    margin-top: 8px;
 }
 
 .Dropdown-control{
     background-color: var(--shadow) !important;
 }
 
-.Dropdown-arrow{
-    margin-top: 8px;
+.send-form{
+    padding-top: 30px;
+}
+
+.send-contact{
+    width: 250px;
+}
+
+.send-amount{
+    width: 100px
+}
+
+.warning{
+    border: 1px solid darkred;
+    background-color: pink;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.complete{
+    border: 1px solid darkgreen;
+    background-color: lightgreen;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+ul.accounts {
+    list-style: inside;
+    padding: 0;
+    margin: 0;
+}
+
+ul.accounts li {
+    padding-bottom: 0;
+}
+
+.contacts {
+    padding-top: 20px;
+}
+
+ul.accounts .type{
+    font-size: 15px;
+    padding-left: 10px;
+    padding-top: 5px;
+    color: var(--gray);
+}
+ul.accounts div {
+    display: inline-block;
+    font-size: 0.8em;
+    vertical-align: top;
+}
+
+.app-name a{
+    color: white;
+    text-decoration: none;
+}
+
+.user-picture{
+    padding-left: 10px;
+}
+
+.user-picture img{
+    border-radius: 5px;
+    margin-top: 5px;
+}
+
+.main-form{
+    padding-top: 10px;
+}
+
+.github-login-button{
+    margin-left: 10px;
+}
+
+.abort-previous-button{
+    margin-bottom: 10px;
+}
+
+.user-balance{
+    cursor: pointer;
 }
