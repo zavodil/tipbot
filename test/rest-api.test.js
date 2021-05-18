@@ -1,5 +1,5 @@
 import 'regenerator-runtime/runtime'
-const near = require('./rest-api-test-utils');
+const contract = require('./rest-api-test-utils');
 const utils = require('./utils');
 
 const alice = "grant.testnet";
@@ -8,15 +8,23 @@ const admin = "zavodil.testnet";
 
 const deposit_size = 12.345;
 const tip_size = 1;
+const alice_contact = "alice.contact";
 const bob_contact = "kakoilogin";
 const admin_commission = 0.003;
+
+const near = new contract(process.env.REACT_CONTRACT_ID);
 
 describe("Contract set", () => {
     test(process.env.REACT_CONTRACT_ID, async () => {
         //const contractName = await near.deploy("tipbot.wasm");
         expect(process.env.REACT_CONTRACT_ID).not.toBe(undefined)
     });
+
+    test(process.env.REACT_CONTRACT_ID, async () => {
+        expect(process.env.REACT_CONTRACT_ID).toBe(near.contract_id)
+    });
 });
+
 
 describe("Deposit and Withdraw", () => {
     test('Deposit', async () => {
@@ -39,7 +47,6 @@ describe("Deposit and Withdraw", () => {
         expect(utils.RoundFloat(alice_wallet_balance_2 - alice_wallet_balance_1)).toBeCloseTo(alice_deposit, 1);
     });
 });
-
 
 describe("Tip, transfer tip to deposit", () => {
     test("Test Deposit", async () => {
@@ -162,3 +169,37 @@ describe("Withdraw or Transfer by not an Admin", () => {
         expect(illegal_transfer.kind.ExecutionError).toMatch(/(No access)/i);
     });
 });
+
+
+
+/*
+describe("Tip Contact Direct", () => {
+    test("Tip contact", async () => {
+        await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
+
+        const alice_deposit_1 = await near.viewNearBalance("get_deposit", {account_id: alice});
+        const bob_balance_1 = await near.viewNearBalance("get_balance", {telegram_account: bob_contact});
+        const bob_wallet_balance_1 = await near.accountNearBalance(bob);
+
+        // send tip direct to contact
+        const tx = await near.call("tip_contact", {
+            contact: {
+                category: "Telegram",
+                value: bob_contact
+            }
+        }, {
+            account_id: alice,
+            tokens: utils.ConvertToNear(tip_size),
+        });
+
+        const alice_deposit_2 = await near.viewNearBalance("get_deposit", {account_id: alice});
+        const bob_balance_2 = await near.viewNearBalance("get_balance", {telegram_account: bob_contact});
+        const bob_wallet_balance_2 = await near.accountNearBalance(bob);
+
+        expect(utils.RoundFloat(alice_deposit_2 - alice_deposit_1)).toBe(0);
+        expect(utils.RoundFloat(bob_balance_2 - bob_balance_1)).toBe(0);
+        expect(utils.RoundFloat(bob_wallet_balance_2 - bob_wallet_balance_1)).toBeCloseTo(tip_size, 1);
+    });
+});
+*/
+
