@@ -1,14 +1,10 @@
 import 'regenerator-runtime/runtime'
-
 const near = require('./rest-api-test-utils');
 const utils = require('./utils');
 
 const alice = "grant.testnet";
 const bob = "place.testnet";
 const admin = "zavodil.testnet";
-
-
-//const contractName = await near.deploy("tipbot.wasm");
 
 const deposit_size = 12.345;
 const tip_size = 1;
@@ -17,6 +13,7 @@ const admin_commission = 0.003;
 
 describe("Contract set", () => {
     test(process.env.REACT_CONTRACT_ID, async () => {
+        //const contractName = await near.deploy("tipbot.wasm");
         expect(process.env.REACT_CONTRACT_ID).not.toBe(undefined)
     });
 });
@@ -133,7 +130,6 @@ describe("Deposit and Tip Too Much", () => {
 
 describe("Withdraw or Transfer by not an Admin", () => {
     test("Fail on withdraw_from_telegram from user", async () => {
-        //deposit
         await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
 
         await near.call("send_tip_to_telegram", {
