@@ -7,9 +7,9 @@ use std::collections::HashMap;
 
 pub type WrappedBalance = U128;
 
-const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
+//const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
 // telegram bot master account id
-//const MASTER_ACCOUNT_ID: &str = "zavodil.testnet"; // testnet
+const MASTER_ACCOUNT_ID: &str = "zavodil.testnet"; // testnet
 const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000;
 // 0.003 NEAR
 const ACCESS_KEY_ALLOWANCE: Balance = 1_000_000_000_000_000_000_000_000;
@@ -603,14 +603,14 @@ impl NearTips {
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
         let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0;
-        assert!(balance > WITHDRAW_COMMISSION, "Not enough tokens to pay withdraw commission");
+        assert!(balance > WITHDRAW_COMMISSION, "Not enough tokens to pay transfer commission");
 
         let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
         self.deposits.insert(account_id.clone(), deposit + balance - WITHDRAW_COMMISSION);
 
         self.telegram_tips.insert(telegram_account.clone(), 0);
 
-        env::log(format!("@{} transfer {} yNEAR from telegram account {}. Withdraw commission: {} yNEAR",
+        env::log(format!("@{} transfer {} yNEAR from telegram account {}. Transfer commission: {} yNEAR",
                          account_id, balance, telegram_account, WITHDRAW_COMMISSION).as_bytes());
     }
 
