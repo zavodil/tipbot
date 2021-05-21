@@ -7,14 +7,13 @@ use std::collections::HashMap;
 
 pub type WrappedBalance = U128;
 
-//const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
-// telegram bot master account id
-const MASTER_ACCOUNT_ID: &str = "zavodil.testnet"; // testnet
+// TODO Set telegram bot master account id
+const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
+//const MASTER_ACCOUNT_ID: &str = "zavodil.testnet";
+
 const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000;
 // 0.003 NEAR
 const ACCESS_KEY_ALLOWANCE: Balance = 1_000_000_000_000_000_000_000_000;
-const MIN_DEPOSIT_AMOUNT: u128 = 100_000_000_000_000_000_000_000;
-// 0.1
 const BASE_GAS: Gas = 25_000_000_000_000;
 const CALLBACK: Gas = 25_000_000_000_000;
 const NO_DEPOSIT: Balance = 0;
@@ -71,6 +70,8 @@ pub enum ContactCategories {
     Twitter,
     Github,
     NearGovForum,
+    Discord,
+    Facebook,
 }
 
 #[ext_contract(ext_self)]
@@ -79,7 +80,8 @@ pub trait ExtNearTips {
     fn on_withdraw(&mut self, predecessor_account_id: AccountId, deposit: Balance) -> bool;
     fn on_withdraw_linkdrop(&mut self, amount: Balance, telegram_account: String, public_key: String) -> bool;
     fn on_get_contacts_on_withdraw_tip_for_current_account(&mut self, #[callback] contacts: Option<Vec<Contact>>, recipient_account_id: AccountId, recipient_contact: Contact, balance: Balance) -> bool;
-    fn on_get_contact_owner(&mut self, #[callback] accounts: Option<Vec<AccountId>>, sender_account_id: AccountId, contact: Contact, deposit: Balance) -> bool;
+    fn on_get_contact_owner_on_tip_contact_to_deposit(&mut self, #[callback] accounts: Option<Vec<AccountId>>, sender_account_id: AccountId, contact: Contact, amount: Balance) -> bool;
+    fn on_get_contact_owner_on_tip_contact_with_attached_tokens(&mut self, #[callback] accounts: Option<Vec<AccountId>>, sender_account_id: AccountId, contact: Contact, deposit: Balance) -> bool;
     fn on_get_contact_owner_on_withdraw_tip_for_undefined_account(&mut self, #[callback] accounts: Option<Vec<AccountId>>, recipient_account_id: AccountId, recipient_contact: Contact, balance_to_withdraw: Balance) -> bool;
     fn on_withdraw_tip(&mut self, account_id: AccountId, contact: Contact, balance: Balance) -> bool;
 }
@@ -108,10 +110,10 @@ impl NearTips {
     }
 
     fn get_auth_contract() -> String {
-        //"dev-1614425625888-4173456".to_string() // mainnet
-        "dev-1620499613958-3096267".to_string() // testnet
+        // TODO Set Auth contract
+        "auth.name.near".to_string() // mainnet
+        //"dev-1620499613958-3096267".to_string() // testnet
     }
-
 
     pub fn get_contact_owner(&self, contact: Contact, contract_address: AccountId) -> Promise {
         auth::get_owners(
@@ -121,11 +123,86 @@ impl NearTips {
             BASE_GAS)
     }
 
-    pub fn on_get_contact_owner(&mut self,
-                                #[callback] accounts: Vec<AccountId>,
-                                sender_account_id: AccountId,
-                                contact: Contact,
-                                deposit: Balance) {
+    pub fn on_get_contact_owner_on_tip_contact_to_deposit(&mut self,
+                                                          #[callback] accounts: Vec<AccountId>,
+                                                          sender_account_id: AccountId,
+                                                          contact: Contact,
+                                                          amount: Balance) {
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Callback can only be called from the contract"
+        );
+
+        let owners_count = accounts.len();
+        assert!(owners_count > 0, "Owner not found");
+        assert!(owners_count <= 1, "Contact belongs to more then 1 account");
+
+        let receiver_account_id: AccountId = accounts[0].clone();
+
+        let sender_deposit: Balance = NearTips::get_deposit(self, sender_account_id.clone()).0;
+        self.deposits.insert(sender_account_id.clone(), sender_deposit - amount);
+
+        let receiver_deposit: Balance = NearTips::get_deposit(self, receiver_account_id.clone()).0;
+        self.deposits.insert(receiver_account_id.clone(), receiver_deposit + amount);
+
+        env::log(format!("@{} transferred {} yNEAR to deposit of @{} [{:?} account {:?}]",
+                         sender_account_id, amount, receiver_account_id, contact.category, contact.value).as_bytes());
+    }
+
+    #[payable]
+    // tip without knowing NEAR account id. telegram_handler = @username, not a numeric ID 123123123
+    pub fn tip_contact_to_deposit(&mut self, telegram_handler: String, amount: WrappedBalance) -> Promise {
+        assert!(amount.0 > 0, "Positive amount needed");
+
+        let account_id = env::predecessor_account_id();
+        let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
+
+        let contact: Contact = Contact {
+            category: ContactCategories::Telegram,
+            value: telegram_handler,
+        };
+
+        assert!(
+            amount.0 <= deposit,
+            "Not enough tokens deposited to tip (Deposit: {}. Requested: {})",
+            deposit, amount.0
+        );
+
+        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
+            then(ext_self::on_get_contact_owner_on_tip_contact_to_deposit(
+                account_id,
+                contact,
+                amount.0,
+                &env::current_account_id(),
+                NO_DEPOSIT,
+                BASE_GAS,
+            ))
+    }
+
+    #[payable]
+    // tip without knowing NEAR account id
+    pub fn tip_contact_with_attached_tokens(&mut self, contact: Contact) -> Promise {
+        let deposit: Balance = near_sdk::env::attached_deposit();
+
+        let account_id = env::predecessor_account_id();
+
+        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
+            then(ext_self::on_get_contact_owner_on_tip_contact_with_attached_tokens(
+                account_id,
+                contact,
+                deposit,
+                &env::current_account_id(),
+                NO_DEPOSIT,
+                BASE_GAS,
+            ))
+    }
+
+    pub fn on_get_contact_owner_on_tip_contact_with_attached_tokens(&mut self,
+                                                                    #[callback] accounts: Vec<AccountId>,
+                                                                    sender_account_id: AccountId,
+                                                                    contact: Contact,
+                                                                    deposit: Balance) {
         assert_eq!(
             env::predecessor_account_id(),
             env::current_account_id(),
@@ -142,24 +219,6 @@ impl NearTips {
         NearTips::tip_transfer(self, sender_account_id, receiver_account_id, contact, deposit);
     }
 
-    #[payable]
-    // tip without knowing NEAR account id
-    pub fn tip_contact(&mut self, contact: Contact) -> Promise {
-        let deposit: Balance = near_sdk::env::attached_deposit();
-        assert!(deposit >= MIN_DEPOSIT_AMOUNT, "Minimal amount is 0.1 NEAR");
-
-        let account_id = env::predecessor_account_id();
-
-        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
-            then(ext_self::on_get_contact_owner(
-                account_id,
-                contact,
-                deposit,
-                &env::current_account_id(),
-                NO_DEPOSIT,
-                BASE_GAS,
-            ))
-    }
 
     fn tip_transfer(&mut self,
                     sender_account_id: AccountId,
@@ -215,9 +274,8 @@ impl NearTips {
 
     #[payable]
     // tip contact of existing NEAR account id
-    pub fn tip(&mut self, receiver_account_id: AccountId, contact: Contact) {
+    pub fn tip_with_attached_tokens(&mut self, receiver_account_id: AccountId, contact: Contact) {
         let deposit: Balance = near_sdk::env::attached_deposit();
-        assert!(deposit >= MIN_DEPOSIT_AMOUNT, "Minimal amount is 0.1 NEAR");
 
         let account_id = env::predecessor_account_id();
 
@@ -475,6 +533,8 @@ impl NearTips {
     }
 
     pub fn send_tip_to_telegram(&mut self, telegram_account: String, amount: WrappedBalance) {
+        assert!(amount.0 > 0, "Positive amount needed");
+
         let account_id = env::predecessor_account_id();
         let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
 
