@@ -25,8 +25,7 @@ describe("Contract set", () => {
 
 describe("Permissions", () => {
     test('Tip available', async () => {
-        const withdraw = await near.call("withdraw", {}, {account_id: alice});
-        expect(withdraw.type).toBe('FunctionCallError');
+        await near.call("withdraw", {}, {account_id: alice});
 
         const deposit = await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
         expect(deposit.type).not.toBe('FunctionCallError');
