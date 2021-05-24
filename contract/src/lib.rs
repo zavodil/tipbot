@@ -38,6 +38,9 @@ pub struct NearTips {
     deposits: HashMap<AccountId, Balance>,
     telegram_tips: HashMap<String, Balance>,
     tips: HashMap<AccountId, Vec<Tip>>,
+    version: u16,
+    withdraw_available: bool,
+    tip_available: bool,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
@@ -153,6 +156,7 @@ impl NearTips {
     #[payable]
     // tip without knowing NEAR account id. telegram_handler = @username, not a numeric ID 123123123
     pub fn tip_contact_to_deposit(&mut self, telegram_handler: String, amount: WrappedBalance) -> Promise {
+        assert!(self.tip_available, "Tips paused");
         assert!(amount.0 > 0, "Positive amount needed");
 
         let account_id = env::predecessor_account_id();
@@ -183,6 +187,7 @@ impl NearTips {
     #[payable]
     // tip without knowing NEAR account id
     pub fn tip_contact_with_attached_tokens(&mut self, contact: Contact) -> Promise {
+        assert!(self.tip_available, "Tips paused");
         let deposit: Balance = near_sdk::env::attached_deposit();
 
         let account_id = env::predecessor_account_id();
@@ -225,6 +230,7 @@ impl NearTips {
                     receiver_account_id: AccountId,
                     contact: Contact,
                     deposit: Balance) {
+        assert!(self.tip_available, "Tips paused");
         match self.tips.get(&receiver_account_id) {
             Some(tips) => {
                 let mut contact_found = false;
@@ -275,6 +281,7 @@ impl NearTips {
     #[payable]
     // tip contact of existing NEAR account id
     pub fn tip_with_attached_tokens(&mut self, receiver_account_id: AccountId, contact: Contact) {
+        assert!(self.tip_available, "Tips paused");
         let deposit: Balance = near_sdk::env::attached_deposit();
 
         let account_id = env::predecessor_account_id();
@@ -373,6 +380,7 @@ impl NearTips {
     }
 
     pub fn withdraw_tip(&mut self, contact: Contact) -> PromiseOrValue<bool> {
+        assert!(self.withdraw_available, "Withdrawals paused");
         // check tips sent exactly to this account
         let account_id = env::predecessor_account_id();
         let balance_of_account: Balance = NearTips::get_tip_by_contact(self, account_id.clone(), contact.clone()).0;
@@ -512,6 +520,7 @@ impl NearTips {
 
     #[payable]
     pub fn deposit(&mut self) {
+        assert!(self.withdraw_available, "Deposits/Withdrawals paused");
         let account_id: AccountId = env::predecessor_account_id();
         let attached_deposit: Balance = env::attached_deposit();
         let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
@@ -533,6 +542,7 @@ impl NearTips {
     }
 
     pub fn send_tip_to_telegram(&mut self, telegram_account: String, amount: WrappedBalance) {
+        assert!(self.tip_available, "Tips paused");
         assert!(amount.0 > 0, "Positive amount needed");
 
         let account_id = env::predecessor_account_id();
@@ -553,6 +563,7 @@ impl NearTips {
     }
 
     pub fn withdraw_from_telegram(&mut self, telegram_account: String, account_id: AccountId) -> Promise {
+        assert!(self.withdraw_available, "Withdrawals paused");
         assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
@@ -591,6 +602,7 @@ impl NearTips {
     }
 
     pub fn withdraw(&mut self) -> Promise {
+        assert!(self.withdraw_available, "Withdrawals paused");
         let account_id = env::predecessor_account_id();
         let deposit: Balance = NearTips::get_deposit(self, account_id.clone()).0;
 
@@ -624,6 +636,7 @@ impl NearTips {
     }
 
     pub fn withdraw_linkdrop(&mut self, public_key: String, telegram_account: String) -> Promise {
+        assert!(self.withdraw_available, "Withdrawals paused");
         assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
         let balance: Balance = NearTips::get_balance(self, telegram_account.clone()).0;
         assert!(balance > WITHDRAW_COMMISSION + ACCESS_KEY_ALLOWANCE, "Not enough tokens to pay for key allowance and withdraw commission");
@@ -658,7 +671,27 @@ impl NearTips {
         withdraw_succeeded
     }
 
+    pub fn set_withdraw_available(&mut self, withdraw_available: bool) {
+        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        self.withdraw_available = withdraw_available;
+    }
+
+    pub fn get_withdraw_available(self) -> bool{
+        self.withdraw_available
+    }
+
+    pub fn set_tip_available(&mut self, tip_available: bool) {
+        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        self.tip_available = tip_available;
+    }
+
+    pub fn get_tip_available(self) -> bool{
+        self.tip_available
+    }
+
     pub fn transfer_tips_to_deposit(&mut self, telegram_account: String, account_id: AccountId) {
+        assert!(self.withdraw_available, "Withdrawals paused");
+
         assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
@@ -676,6 +709,51 @@ impl NearTips {
 
     pub fn assert_self() {
         assert_eq!(env::predecessor_account_id(), env::current_account_id());
+    }
+
+    pub fn get_master_account_id() -> String {
+        MASTER_ACCOUNT_ID.to_string()
+    }
+
+    pub fn get_version(&self) -> u16 {
+        self.version
+    }
+
+    pub fn get_deposits(&self) -> HashMap<AccountId, U128> {
+        self.deposits
+            .iter()
+            .map(|(account_id, balance)| (account_id.clone(), (*balance).into()))
+            .collect()
+    }
+
+    pub fn get_telegram_tips(&self) -> HashMap<String, U128> {
+        self.telegram_tips
+            .iter()
+            .map(|(telegram_id, balance)| (telegram_id.clone(), (*balance).into()))
+            .collect()
+    }
+
+    #[init(ignore_state)]
+    pub fn migrate_state_1() -> Self {
+        let migration_version: u16 = 1;
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Private function");
+
+        #[derive(BorshDeserialize)]
+        struct OldContract {
+            deposits: HashMap<AccountId, Balance>,
+            telegram_tips: HashMap<String, Balance>
+        }
+
+        let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
+
+        Self {
+            deposits: old_contract.deposits,
+            telegram_tips: old_contract.telegram_tips,
+            tips: HashMap::new(),
+            version: migration_version,
+            withdraw_available: true,
+            tip_available: true,
+        }
     }
 }
 

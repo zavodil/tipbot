@@ -23,6 +23,59 @@ describe("Contract set", () => {
 });
 
 
+describe("Permissions", () => {
+    test('Tip available', async () => {
+        const withdraw = await near.call("withdraw", {}, {account_id: alice});
+        expect(withdraw.type).toBe('FunctionCallError');
+
+        const deposit = await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
+        expect(deposit.type).not.toBe('FunctionCallError');
+
+        const tip_unavailable = await near.call("set_tip_available", {tip_available: false}, {account_id: admin});
+        expect(tip_unavailable.type).not.toBe('FunctionCallError');
+
+        const send_tip_1 = await near.call("send_tip_to_telegram", {
+            telegram_account: bob_contact,
+            amount: utils.ConvertToNear(tip_size),
+        }, {
+            account_id: alice
+        });
+        expect(send_tip_1.type).toBe('FunctionCallError');
+
+        const tip_available = await near.call("set_tip_available",  {tip_available: true}, {account_id: admin});
+        expect(tip_available.type).not.toBe('FunctionCallError');
+
+        const send_tip_2 = await near.call("send_tip_to_telegram", {
+            telegram_account: bob_contact,
+            amount: utils.ConvertToNear(tip_size),
+        }, {
+            account_id: alice
+        });
+        expect(send_tip_2.type).not.toBe('FunctionCallError');
+
+        const tip_unavailable_illegal = await near.call("set_tip_available", {tip_available: false}, {account_id: alice});
+        expect(tip_unavailable_illegal.type).toBe('FunctionCallError');
+    });
+
+    test("Withdraw available", async () => {
+        const withdraw_unavailable = await near.call("set_withdraw_available",  {withdraw_available: false}, {account_id: admin});
+        expect(withdraw_unavailable.type).not.toBe('FunctionCallError');
+
+        const withdraw_1 = await near.call("withdraw", {}, {account_id: alice});
+        expect(withdraw_1.type).toBe('FunctionCallError');
+
+        const withdraw_available = await near.call("set_withdraw_available", {withdraw_available: true}, {account_id: admin});
+        expect(withdraw_available.type).not.toBe('FunctionCallError');
+
+        const withdraw_2 = await near.call("withdraw", {}, {account_id: alice});
+        expect(withdraw_2.type).not.toBe('FunctionCallError');
+
+        const withdraw_available_illegal = await near.call("set_withdraw_available", {tip_available: false}, {account_id: alice});
+        expect(withdraw_available_illegal.type).toBe('FunctionCallError');
+    });
+});
+
+
 describe("Deposit and Withdraw", () => {
     test('Deposit', async () => {
         const alice_deposit_1 = await near.viewNearBalance("get_deposit", {account_id: alice});
