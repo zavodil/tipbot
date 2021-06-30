@@ -12,8 +12,8 @@ const carol = process.env.REACT_CONTRACT_ID; // without contacts
 const carol_contact = "";
 
 
-const deposit_size = 12.345;
-const tip_size = 1;
+const deposit_size = 1.2345;
+const tip_size = 0.1;
 const admin_commission = 0.003;
 
 const near = new contract(process.env.REACT_CONTRACT_ID);
@@ -368,15 +368,21 @@ describe("Create contact and send tip", () => {
             const alice_tips = await near.viewNearBalance("get_balance", {telegram_account: alice_contact});
             const alice_wallet_balance_1 = await near.accountNearBalance(alice);
 
-            const withdraw_from_telegram_with_auth_alice = await near.call("withdraw_from_telegram_with_auth", {}, {account_id: alice});
+            const withdraw_from_telegram_with_auth_alice = await near.call("withdraw_from_telegram_with_auth", {"telegram_handler": alice_contact}, {account_id: alice});
             expect(withdraw_from_telegram_with_auth_alice.type).not.toBe('FunctionCallError');
 
-            const withdraw_from_telegram_with_auth_carol = await near.call("withdraw_from_telegram_with_auth", {}, {account_id: carol});
-            expect(withdraw_from_telegram_with_auth_carol.type).toBe(undefined); // null because doesn't have contracts
+            const withdraw_from_telegram_with_auth_bob = await near.call("withdraw_from_telegram_with_auth", {"telegram_handler": bob_contact}, {account_id: alice});
+            expect(withdraw_from_telegram_with_auth_bob.type).toBe('FunctionCallError');
+
+            const withdraw_from_telegram_with_auth_bob_with_alice_contact = await near.call("withdraw_from_telegram_with_auth", {"telegram_handler": alice_contact}, {account_id: bob});
+            expect(withdraw_from_telegram_with_auth_bob_with_alice_contact.type).toBe('FunctionCallError');
+
+            const withdraw_from_telegram_with_auth_carol = await near.call("withdraw_from_telegram_with_auth", {"telegram_handler": carol_contact}, {account_id: carol});
+            expect(withdraw_from_telegram_with_auth_carol.type).toBe('FunctionCallError');
 
             const alice_wallet_balance_2 = await near.accountNearBalance(alice);
 
-            expect(utils.RoundFloat(alice_wallet_balance_2 - alice_wallet_balance_1)).toBeCloseTo(alice_tips, 5);
+            expect(utils.RoundFloat(alice_wallet_balance_2 - alice_wallet_balance_1)).toBeCloseTo(alice_tips, 1);
         });
     });
 
@@ -422,6 +428,11 @@ describe("Create contact and send tip", () => {
     });
 
     test("Tip attached tokens to contact", async () => {
+        const withdraw_tip_init = await near.call("withdraw_tip", {
+            contact: {category: "Telegram", value: alice_contact}
+        }, {account_id: alice});
+        expect(withdraw_tip_init.type).not.toBe('FunctionCallError');
+
         const alice_wallet_balance_1 = await near.accountNearBalance(alice);
         const alice_tip_by_contact_1 = await near.viewNearBalance("get_tip_by_contact", {
             account_id: alice,
@@ -461,6 +472,11 @@ describe("Create contact and send tip", () => {
     });
 
     test("Tip attached tokens to account by it contact", async () => {
+        const withdraw_tip_init = await near.call("withdraw_tip", {
+            contact: {category: "Telegram", value: alice_contact}
+        }, {account_id: alice});
+        expect(withdraw_tip_init.type).not.toBe('FunctionCallError');
+
         const alice_wallet_balance_1 = await near.accountNearBalance(alice);
         const alice_tip_by_contact_1 = await near.viewNearBalance("get_tip_by_contact", {
             account_id: alice,

@@ -15,7 +15,7 @@ const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000;
 // 0.003 NEAR
 const ACCESS_KEY_ALLOWANCE: Balance = 1_000_000_000_000_000_000_000_000;
 const BASE_GAS: Gas = 25_000_000_000_000;
-const CALLBACK: Gas = 25_000_000_000_000;
+const CALLBACK_GAS: Gas = 25_000_000_000_000;
 const NO_DEPOSIT: Balance = 0;
 
 #[ext_contract(linkdrop)]
@@ -80,6 +80,7 @@ pub enum ContactCategories {
 #[ext_contract(ext_self)]
 pub trait ExtNearTips {
     fn on_withdraw_from_telegram(&mut self, predecessor_account_id: AccountId, amount: Balance, telegram_account: String) -> bool;
+    fn on_withdraw_from_telegram_without_commission(&mut self, predecessor_account_id: AccountId, amount: Balance, telegram_account: String) -> bool;
     fn on_withdraw(&mut self, predecessor_account_id: AccountId, deposit: Balance) -> bool;
     fn on_withdraw_linkdrop(&mut self, amount: Balance, telegram_account: String, public_key: String) -> bool;
     fn on_get_contacts_on_withdraw_tip_for_current_account(&mut self, #[callback] contacts: Option<Vec<Contact>>, recipient_account_id: AccountId, recipient_contact: Contact, balance: Balance) -> bool;
@@ -87,7 +88,7 @@ pub trait ExtNearTips {
     fn on_get_contact_owner_on_tip_contact_with_attached_tokens(&mut self, #[callback] accounts: Option<Vec<AccountId>>, sender_account_id: AccountId, contact: Contact, deposit: Balance) -> bool;
     fn on_get_contact_owner_on_withdraw_tip_for_undefined_account(&mut self, #[callback] accounts: Option<Vec<AccountId>>, recipient_account_id: AccountId, recipient_contact: Contact, balance_to_withdraw: Balance) -> bool;
     fn on_withdraw_tip(&mut self, account_id: AccountId, contact: Contact, balance: Balance) -> bool;
-    fn on_get_contacts_on_withdraw_from_telegram_with_auth(&mut self, #[callback] contacts: Option<Vec<Contact>>, recipient_account_id: AccountId) -> bool;
+    fn on_get_contact_owner_on_withdraw_from_telegram_with_auth(&mut self, #[callback] accounts: Option<Vec<AccountId>>, recipient_account_id: AccountId, contact: Contact) -> bool;
 }
 
 fn is_promise_success() -> bool {
@@ -182,7 +183,7 @@ impl NearTips {
                 amount.0,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                BASE_GAS,
+                CALLBACK_GAS,
             ))
     }
 
@@ -201,7 +202,7 @@ impl NearTips {
                 deposit,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                BASE_GAS,
+                CALLBACK_GAS,
             ))
     }
 
@@ -324,7 +325,7 @@ impl NearTips {
                 balance_to_withdraw,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                2 * BASE_GAS,
+                CALLBACK_GAS * 2,
             ))
     }
 
@@ -338,7 +339,7 @@ impl NearTips {
                 balance_to_withdraw,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                2 * BASE_GAS,
+                CALLBACK_GAS * 2,
             ))
     }
 
@@ -377,7 +378,7 @@ impl NearTips {
                 balance_to_withdraw,
                 &env::current_account_id(),
                 0,
-                CALLBACK,
+                CALLBACK_GAS,
             ))
     }
 
@@ -438,7 +439,7 @@ impl NearTips {
                                 balance,
                                 &env::current_account_id(),
                                 0,
-                                CALLBACK,
+                                CALLBACK_GAS,
                             ));
 
                         env::log(format!("Transfer to {} [{:?} account {:?}]", recipient_account_id, contact.category, contact.value).as_bytes());
@@ -581,7 +582,7 @@ impl NearTips {
                 telegram_account,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                BASE_GAS,
+                CALLBACK_GAS,
             ))
     }
 
@@ -603,61 +604,84 @@ impl NearTips {
         withdraw_succeeded
     }
 
+    pub fn on_withdraw_from_telegram_without_commission(&mut self,
+                                                        predecessor_account_id: AccountId,
+                                                        amount: Balance,
+                                                        telegram_account: String) -> bool {
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Callback can only be called from the contract"
+        );
+        let withdraw_succeeded = is_promise_success();
+        if withdraw_succeeded {
+            self.telegram_tips.insert(telegram_account.clone(), 0);
+
+            env::log(format!("@{} withdrew {} yNEAR from telegram account {}",
+                             predecessor_account_id, amount, telegram_account).as_bytes());
+        }
+
+        withdraw_succeeded
+    }
+
 
     #[payable]
-    // withdraw for those who made near auth
-    pub fn withdraw_from_telegram_with_auth(&mut self) -> Promise {
+    // withdraw for those who made near auth. telegram_handler = @username, not a numeric ID 123123123
+    pub fn withdraw_from_telegram_with_auth(&mut self, telegram_handler: String) -> Promise {
         assert!(self.withdraw_available, "Withdrawals paused");
 
         let account_id = env::predecessor_account_id();
 
-        auth::get_contacts(account_id.clone(), &NearTips::get_auth_contract(), NO_DEPOSIT, BASE_GAS).
-            then(ext_self::on_get_contacts_on_withdraw_from_telegram_with_auth(
+        let contact: Contact = Contact {
+            category: ContactCategories::Telegram,
+            value: telegram_handler,
+        };
+
+        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
+            then(ext_self::on_get_contact_owner_on_withdraw_from_telegram_with_auth(
                 account_id,
+                contact,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                BASE_GAS * 2,
+                CALLBACK_GAS * 2,
             ))
     }
 
-    pub fn on_get_contacts_on_withdraw_from_telegram_with_auth(&mut self,
-                                                               #[callback] contacts: Option<Vec<Contact>>,
-                                                               recipient_account_id: AccountId) -> bool {
+    pub fn on_get_contact_owner_on_withdraw_from_telegram_with_auth(&mut self,
+                                                                    #[callback] accounts: Option<Vec<AccountId>>,
+                                                                    recipient_account_id: AccountId,
+                                                                    contact: Contact) -> Promise {
         assert_eq!(
             env::predecessor_account_id(),
             env::current_account_id(),
             "Callback can only be called from the contract"
         );
 
-        match contacts {
-            Some(contacts) => {
-                for contact in &contacts {
-                    if contact.category == ContactCategories::Telegram {
-                        let balance: Balance = NearTips::get_balance(self, contact.clone().value).0;
-                        assert!(balance > 0, "Not enough tokens to withdraw");
+        match accounts {
+            Some(accounts) => {
+                let owners_count = accounts.len();
+                assert!(owners_count > 0, "Owner not found");
+                assert!(owners_count <= 1, "Contact belongs to more then 1 account");
+                assert!(accounts[0].clone() == recipient_account_id, "Not authorized to withdraw");
 
-                        Promise::new(recipient_account_id)
-                            .transfer(balance)
-                            .then(ext_self::on_withdraw_from_telegram(
-                                env::predecessor_account_id(),
-                                balance,
-                                contact.clone().value,
-                                &env::current_account_id(),
-                                NO_DEPOSIT,
-                                BASE_GAS,
-                            ));
+                let balance: Balance = NearTips::get_balance(self, contact.clone().value).0;
+                assert!(balance > 0, "Not enough tokens to withdraw");
 
-                        return true;
-                    }
-                }
-                env::log(format!("Telegram account was not authorized for {}", recipient_account_id).as_bytes());
+                Promise::new(recipient_account_id)
+                    .transfer(balance)
+                    .then(ext_self::on_withdraw_from_telegram_without_commission(
+                        env::predecessor_account_id(),
+                        balance,
+                        contact.clone().value,
+                        &env::current_account_id(),
+                        NO_DEPOSIT,
+                        CALLBACK_GAS,
+                    ))
             }
             None => {
-                env::log("Contacts not found".to_string().as_bytes());
+                panic!("Contact wasn't authorized to any account");
             }
         }
-
-        false
     }
 
 
@@ -675,7 +699,7 @@ impl NearTips {
                 deposit,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                BASE_GAS,
+                CALLBACK_GAS,
             ))
     }
 
@@ -709,7 +733,7 @@ impl NearTips {
                 public_key,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                BASE_GAS,
+                CALLBACK_GAS,
             ))
     }
 
