@@ -33,7 +33,11 @@ contract.prototype.viewNearBalance = async function (method, params, options) {
 };
 
 contract.prototype.accountNearBalance = async function (account_id) {
-    return await utils.GetResponse("balance", account_id, {convertToNear: true});
+    try {
+        return await utils.GetResponse("balance", account_id, {convertToNear: true});
+    } catch (e) {
+        throw new Error("AccountNearBalance error for " + JSON.stringify(account_id) + ". Error: " + e.message);
+    }
 };
 
 contract.prototype.call = async function (method, params, options) {

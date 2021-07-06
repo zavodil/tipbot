@@ -42,6 +42,9 @@ module.exports = {
             .then(res => {
                 return res.text().then(response => {
                     if (options && options.convertToNear) {
+                        if (isNaN(response))
+                            throw new Error(`Illegal balance value. Request: ${JSON.stringify(body)}. Response: ${response}`);
+
                         return module.exports.RoundFloat(module.exports.ConvertYoctoNear(response, config.FRACTION_DIGITS));
                     } else {
                         try {

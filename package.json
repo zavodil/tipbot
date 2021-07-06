@@ -20,7 +20,8 @@
     "deploy:contract:testnet": "export NODE_ENV=testnet && near deploy",
     "build:web:all": "export NODE_ENV=mainnet && rm -r mainnet && parcel build src/index.html --public-url ./ && mv dist mainnet && export NODE_ENV=testnet && rm -r testnet && parcel build src/index.html --public-url ./ && mv dist testnet",
     "dev:clear": "rm -r neardev",
-    "test": "cross-env NODE_ENV=testnet && cross-env REACT_CONTRACT_ID=dev-1625005832760-75010334092211 jest rest-api.test.js -t 'Create contact and send tip' --useStderr"
+    "test": "cross-env NODE_ENV=testnet && cross-env REACT_CONTRACT_ID=dev-1625495036549-94748529609666 jest rest-api.test.js --useStderr",
+    "test1": "cross-env NODE_ENV=testnet && cross-env REACT_CONTRACT_ID=dev-1625495036549-94748529609666 jest rest-api.test.js -t 'Create contact and send tip' --useStderr"
   },
   "devDependencies": {
     "@babel/core": "~7.12.3",
