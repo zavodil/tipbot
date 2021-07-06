@@ -67,6 +67,20 @@ pub struct Contact {
     pub account_id: Option<TelegramAccountId>,
 }
 
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Eq, PartialEq, Clone)]
+#[serde(crate = "near_sdk::serde")]
+pub struct Contact_v1 {
+    pub category: ContactCategories,
+    pub value: String,
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
+#[serde(crate = "near_sdk::serde")]
+pub struct Tip_v1 {
+    pub contact: Contact_v1,
+    pub amount: Balance,
+}
+
 
 #[derive(BorshSerialize, BorshDeserialize, Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]
 #[serde(crate = "near_sdk::serde")]
@@ -885,7 +899,7 @@ impl NearTips {
         struct OldContract {
             deposits: HashMap<AccountId, Balance>,
             telegram_tips: HashMap<String, Balance>,
-            tips: UnorderedMap<AccountId, Vec<Tip>>,
+            tips: HashMap<AccountId, Vec<Tip_v1>>,
             version: u16,
             withdraw_available: bool,
             tip_available: bool,
