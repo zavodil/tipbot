@@ -141,7 +141,7 @@ impl NearTips {
     fn get_auth_contract() -> String {
         // TODO INIT
         //"auth.name.near".to_string() // mainnet
-        "dev-1625269866199-82732595966935".to_string() // testnet
+        "dev-1625611642901-32969379055293".to_string() // testnet
     }
 
     #[init]
@@ -874,6 +874,10 @@ impl NearTips {
         struct OldContract {
             deposits: HashMap<AccountId, Balance>,
             telegram_tips: HashMap<String, Balance>,
+            tips: HashMap<AccountId, Vec<Tip_v1>>,
+            version: u16,
+            withdraw_available: bool,
+            tip_available: bool,
         }
 
         let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
@@ -899,7 +903,7 @@ impl NearTips {
         struct OldContract {
             deposits: HashMap<AccountId, Balance>,
             telegram_tips: HashMap<String, Balance>,
-            tips: HashMap<AccountId, Vec<Tip_v1>>,
+            tips: UnorderedMap<AccountId, Vec<Tip>>,
             version: u16,
             withdraw_available: bool,
             tip_available: bool,
