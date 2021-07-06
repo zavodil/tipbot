@@ -1,11 +1,13 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::wee_alloc;
-use near_sdk::{env, near_bindgen, AccountId, Balance, Promise, Gas, ext_contract, PromiseResult, PromiseOrValue};
+use near_sdk::{env, near_bindgen, AccountId, Balance, Promise, Gas, ext_contract, PromiseResult, PromiseOrValue, PanicOnDefault};
 use near_sdk::json_types::U128;
+use near_sdk::collections::UnorderedMap;
 use std::collections::HashMap;
 
 pub type WrappedBalance = U128;
+pub type TelegramAccountId = u64;
 
 // TODO INIT Set telegram bot master account id
 //const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
@@ -26,18 +28,18 @@ pub trait ExtLinkdrop {
 #[ext_contract(auth)]
 pub trait ExtAuth {
     fn get_contacts(&self, account_id: AccountId) -> Option<Vec<Contact>>;
-    fn get_owners(&self, contact: Contact) -> Vec<AccountId>;
+    fn get_account_for_contact(&self, contact: Contact) -> Vec<AccountId>;
 }
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[near_bindgen]
-#[derive(Default, BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct NearTips {
     deposits: HashMap<AccountId, Balance>,
     telegram_tips: HashMap<String, Balance>,
-    tips: HashMap<AccountId, Vec<Tip>>,
+    tips: UnorderedMap<AccountId, Vec<Tip>>,
     version: u16,
     withdraw_available: bool,
     tip_available: bool,
@@ -62,6 +64,7 @@ pub struct TipWrapped {
 pub struct Contact {
     pub category: ContactCategories,
     pub value: String,
+    pub account_id: Option<TelegramAccountId>,
 }
 
 
@@ -84,11 +87,11 @@ pub trait ExtNearTips {
     fn on_withdraw(&mut self, predecessor_account_id: AccountId, deposit: Balance) -> bool;
     fn on_withdraw_linkdrop(&mut self, amount: Balance, telegram_account: String, public_key: String) -> bool;
     fn on_get_contacts_on_withdraw_tip_for_current_account(&mut self, #[callback] contacts: Option<Vec<Contact>>, recipient_account_id: AccountId, recipient_contact: Contact, balance: Balance) -> bool;
-    fn on_get_contact_owner_on_tip_contact_to_deposit(&mut self, #[callback] accounts: Option<Vec<AccountId>>, sender_account_id: AccountId, contact: Contact, amount: Balance) -> bool;
-    fn on_get_contact_owner_on_tip_contact_with_attached_tokens(&mut self, #[callback] accounts: Option<Vec<AccountId>>, sender_account_id: AccountId, contact: Contact, deposit: Balance) -> bool;
-    fn on_get_contact_owner_on_withdraw_tip_for_undefined_account(&mut self, #[callback] accounts: Option<Vec<AccountId>>, recipient_account_id: AccountId, recipient_contact: Contact, balance_to_withdraw: Balance) -> bool;
+    fn on_get_contact_owner_on_tip_contact_to_deposit(&mut self, #[callback] account: Option<AccountId>, sender_account_id: AccountId, contact: Contact, amount: Balance) -> bool;
+    fn on_get_contact_owner_on_tip_contact_with_attached_tokens(&mut self, #[callback] account: Option<AccountId>, sender_account_id: AccountId, contact: Contact, deposit: Balance) -> bool;
+    fn on_get_contact_owner_on_withdraw_tip_for_undefined_account(&mut self, #[callback] account: Option<AccountId>, recipient_account_id: AccountId, recipient_contact: Contact, balance_to_withdraw: Balance) -> bool;
     fn on_withdraw_tip(&mut self, account_id: AccountId, contact: Contact, balance: Balance) -> bool;
-    fn on_get_contact_owner_on_withdraw_from_telegram_with_auth(&mut self, #[callback] accounts: Option<Vec<AccountId>>, recipient_account_id: AccountId, contact: Contact) -> bool;
+    fn on_get_contact_owner_on_withdraw_from_telegram_with_auth(&mut self, #[callback] account: Option<AccountId>, recipient_account_id: AccountId, contact: Contact) -> bool;
 }
 
 fn is_promise_success() -> bool {
@@ -101,6 +104,12 @@ fn is_promise_success() -> bool {
         PromiseResult::Successful(_) => true,
         _ => false,
     }
+}
+
+/// Helper structure to for keys of the persistent collections.
+#[derive(BorshSerialize)]
+pub enum StorageKey {
+    Tips,
 }
 
 #[near_bindgen]
@@ -118,11 +127,23 @@ impl NearTips {
     fn get_auth_contract() -> String {
         // TODO INIT
         //"auth.name.near".to_string() // mainnet
-        "dev-1620499613958-3096267".to_string() // testnet
+        "dev-1625269866199-82732595966935".to_string() // testnet
+    }
+
+    #[init]
+    pub fn new() -> Self {
+        Self {
+            deposits: HashMap::new(),
+            telegram_tips: HashMap::new(),
+            tips: UnorderedMap::new(StorageKey::Tips.try_to_vec().unwrap()),
+            version: 0,
+            withdraw_available: true,
+            tip_available: true,
+        }
     }
 
     pub fn get_contact_owner(&self, contact: Contact, contract_address: AccountId) -> Promise {
-        auth::get_owners(
+        auth::get_account_for_contact(
             contact,
             &contract_address,
             NO_DEPOSIT,
@@ -130,7 +151,7 @@ impl NearTips {
     }
 
     pub fn on_get_contact_owner_on_tip_contact_to_deposit(&mut self,
-                                                          #[callback] accounts: Vec<AccountId>,
+                                                          #[callback] account: Option<AccountId>,
                                                           sender_account_id: AccountId,
                                                           contact: Contact,
                                                           amount: Balance) {
@@ -140,11 +161,15 @@ impl NearTips {
             "Callback can only be called from the contract"
         );
 
+        /*
         let owners_count = accounts.len();
         assert!(owners_count > 0, "Owner not found");
         assert!(owners_count <= 1, "Contact belongs to more then 1 account");
-
         let receiver_account_id: AccountId = accounts[0].clone();
+        */
+
+        assert!(!account.is_none(), "Owner not found");
+        let receiver_account_id: AccountId = account.unwrap();
 
         let sender_deposit: Balance = NearTips::get_deposit(self, sender_account_id.clone()).0;
         self.deposits.insert(sender_account_id.clone(), sender_deposit - amount);
@@ -157,8 +182,8 @@ impl NearTips {
     }
 
     #[payable]
-    // tip without knowing NEAR account id. telegram_handler = @username, not a numeric ID 123123123
-    pub fn tip_contact_to_deposit(&mut self, telegram_handler: String, amount: WrappedBalance) -> Promise {
+    // tip without knowing NEAR account id. telegram_account is numeric ID 123123123
+    pub fn tip_contact_to_deposit(&mut self, telegram_account: TelegramAccountId, amount: WrappedBalance) -> Promise {
         assert!(self.tip_available, "Tips paused");
         assert!(amount.0 > 0, "Positive amount needed");
 
@@ -167,7 +192,8 @@ impl NearTips {
 
         let contact: Contact = Contact {
             category: ContactCategories::Telegram,
-            value: telegram_handler,
+            value: "".to_string(),
+            account_id: Some(telegram_account),
         };
 
         assert!(
@@ -207,7 +233,7 @@ impl NearTips {
     }
 
     pub fn on_get_contact_owner_on_tip_contact_with_attached_tokens(&mut self,
-                                                                    #[callback] accounts: Vec<AccountId>,
+                                                                    #[callback] account: Option<AccountId>,
                                                                     sender_account_id: AccountId,
                                                                     contact: Contact,
                                                                     deposit: Balance) {
@@ -217,12 +243,16 @@ impl NearTips {
             "Callback can only be called from the contract"
         );
 
+        /*
         let owners_count = accounts.len();
-
         assert!(owners_count <= 1, "Contact belongs to more then 1 account");
         assert!(owners_count > 0, "Owner not found");
 
         let receiver_account_id: AccountId = if owners_count == 0 { "".to_string() } else { accounts[0].clone() };
+        */
+
+        assert!(!account.is_none(), "Owner not found");
+        let receiver_account_id: AccountId = account.unwrap();
 
         NearTips::tip_transfer(self, sender_account_id, receiver_account_id, contact, deposit);
     }
@@ -241,7 +271,8 @@ impl NearTips {
                     tips
                         .iter()
                         .map(|tip| {
-                            if tip.contact.value == contact.value && tip.contact.category == contact.category {
+                            //if tip.contact.value == contact.value && tip.contact.category == contact.category {
+                            if NearTips::compare_contacts(tip.contact.clone(), contact.clone()) {
                                 contact_found = true;
                                 Tip {
                                     contact: contact.clone(),
@@ -256,14 +287,14 @@ impl NearTips {
                 env::log(format!("contact_found {}", contact_found).as_bytes());
 
                 if contact_found {
-                    self.tips.insert(receiver_account_id.clone(), filtered_tips);
+                    self.tips.insert(&receiver_account_id.clone(), &filtered_tips);
                 } else {
                     let tip: Tip = Tip {
                         contact: contact.clone(),
                         amount: deposit,
                     };
                     filtered_tips.push(tip);
-                    self.tips.insert(receiver_account_id.clone(), filtered_tips);
+                    self.tips.insert(&receiver_account_id.clone(), &filtered_tips);
                 }
             }
             None => {
@@ -273,7 +304,7 @@ impl NearTips {
                     amount: deposit,
                 };
                 tips.push(tip);
-                self.tips.insert(receiver_account_id.clone(), tips);
+                self.tips.insert(&receiver_account_id.clone(), &tips);
             }
         }
 
@@ -300,6 +331,17 @@ impl NearTips {
         }
     }
 
+    pub fn get_all_tips(&self, from_index: u64, limit: u64) -> HashMap<AccountId, Option<Vec<Tip>>> {
+        let keys = self.tips.keys_as_vector();
+
+        (from_index..std::cmp::min(from_index + limit, keys.len()))
+            .map(|index| {
+                let account_id = keys.get(index).unwrap();
+                let tips = self.get_tips(account_id.clone());
+                (account_id, tips)
+            })
+            .collect()
+    }
 
     pub fn get_tips_wrapped(&self, account_id: AccountId) -> Option<Vec<TipWrapped>> {
         match self.tips.get(&account_id) {
@@ -345,7 +387,7 @@ impl NearTips {
 
 
     pub fn on_get_contact_owner_on_withdraw_tip_for_undefined_account(&mut self,
-                                                                      #[callback] accounts: Vec<AccountId>,
+                                                                      #[callback] account: Option<AccountId>,
                                                                       recipient_account_id: AccountId,
                                                                       recipient_contact: Contact,
                                                                       balance_to_withdraw: Balance) -> Promise {
@@ -354,14 +396,19 @@ impl NearTips {
             env::current_account_id(),
             "Callback can only be called from the contract"
         );
+        /*
+                let owners_count = accounts.len();
 
-        let owners_count = accounts.len();
+                assert!(owners_count <= 1, "Contact belongs to more then 1 account");
+                assert!(owners_count > 0, "Owner not found");
 
-        assert!(owners_count <= 1, "Contact belongs to more then 1 account");
-        assert!(owners_count > 0, "Owner not found");
+                let undefined_account_id = NearTips::get_undefined_account();
+                let contact_owner_account_id: AccountId = if owners_count == 0 { undefined_account_id.clone() } else { accounts[0].clone() };
+                */
 
+        assert!(!account.is_none(), "Owner not found");
+        let contact_owner_account_id: AccountId = account.unwrap();
         let undefined_account_id = NearTips::get_undefined_account();
-        let contact_owner_account_id: AccountId = if owners_count == 0 { undefined_account_id.clone() } else { accounts[0].clone() };
 
         assert_eq!(
             contact_owner_account_id,
@@ -430,7 +477,8 @@ impl NearTips {
             Some(contacts) => {
                 for contact in &contacts {
                     env::log(format!("Check:  [{:?} account {:?}]", contact.category, contact.value).as_bytes());
-                    if contact.value == recipient_contact.value && contact.category == recipient_contact.category {
+                    //if contact.value == recipient_contact.value && contact.category == recipient_contact.category {
+                    if NearTips::compare_contacts(contact.clone(), recipient_contact.clone()) {
                         Promise::new(recipient_account_id.clone())
                             .transfer(balance)
                             .then(ext_self::on_withdraw_tip(
@@ -484,7 +532,7 @@ impl NearTips {
 
                     if contact_found {
                         env::log(format!("Tip deducted for @{} by {} [{:?} account {:?}]", account_id, balance, contact.category, contact.value).as_bytes());
-                        self.tips.insert(account_id.clone(), filtered_tips);
+                        self.tips.insert(&account_id.clone(), &filtered_tips);
                         true
                     } else {
                         false
@@ -499,13 +547,21 @@ impl NearTips {
         }
     }
 
+    pub(crate) fn compare_contacts(contact1: Contact, contact2: Contact) -> bool {
+        if contact1.category == ContactCategories::Telegram && contact2.category == ContactCategories::Telegram {
+            return contact1.account_id == contact2.account_id;
+        } else {
+            return contact1.category == contact2.category && contact1.value == contact2.value;
+        }
+    }
+
     pub fn get_tip_by_contact(&self, account_id: AccountId, contact: Contact) -> WrappedBalance {
         match self.tips.get(&account_id) {
             Some(tips) => {
                 let filtered_tip: Vec<_> =
                     tips
                         .iter()
-                        .filter(|tip| tip.contact == contact)
+                        .filter(|tip| NearTips::compare_contacts(tip.contact.clone(), contact.clone()))
                         .collect();
 
                 let tips_quantity = filtered_tip.len();
@@ -626,15 +682,16 @@ impl NearTips {
 
 
     #[payable]
-    // withdraw for those who made near auth. telegram_handler = @username, not a numeric ID 123123123
-    pub fn withdraw_from_telegram_with_auth(&mut self, telegram_handler: String) -> Promise {
+    // withdraw for those who made near auth. telegram_account is numeric ID 123123123
+    pub fn withdraw_from_telegram_with_auth(&mut self, telegram_account: TelegramAccountId) -> Promise {
         assert!(self.withdraw_available, "Withdrawals paused");
 
         let account_id = env::predecessor_account_id();
 
         let contact: Contact = Contact {
             category: ContactCategories::Telegram,
-            value: telegram_handler,
+            value: "".to_string(),
+            account_id: Some(telegram_account),
         };
 
         self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
@@ -648,7 +705,7 @@ impl NearTips {
     }
 
     pub fn on_get_contact_owner_on_withdraw_from_telegram_with_auth(&mut self,
-                                                                    #[callback] accounts: Option<Vec<AccountId>>,
+                                                                    #[callback] account: Option<AccountId>,
                                                                     recipient_account_id: AccountId,
                                                                     contact: Contact) -> Promise {
         assert_eq!(
@@ -657,14 +714,20 @@ impl NearTips {
             "Callback can only be called from the contract"
         );
 
-        match accounts {
-            Some(accounts) => {
+        match account {
+            Some(account) => {
+                /*
                 let owners_count = accounts.len();
                 assert!(owners_count > 0, "Owner not found");
                 assert!(owners_count <= 1, "Contact belongs to more then 1 account");
                 assert!(accounts[0].clone() == recipient_account_id, "Not authorized to withdraw");
+                */
 
-                let balance: Balance = NearTips::get_balance(self, contact.clone().value).0;
+                assert!(account == recipient_account_id, "Not authorized to withdraw");
+
+                assert!(!contact.clone().account_id.is_none(), "Account ID is missing");
+
+                let balance: Balance = NearTips::get_balance(self, contact.clone().account_id.unwrap().to_string()).0;
                 assert!(balance > 0, "Not enough tokens to withdraw");
 
                 Promise::new(recipient_account_id)
@@ -672,7 +735,7 @@ impl NearTips {
                     .then(ext_self::on_withdraw_from_telegram_without_commission(
                         env::predecessor_account_id(),
                         balance,
-                        contact.clone().value,
+                        contact.clone().account_id.unwrap().to_string(),
                         &env::current_account_id(),
                         NO_DEPOSIT,
                         CALLBACK_GAS,
@@ -830,10 +893,41 @@ impl NearTips {
 
         let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
 
+        let new_tips = UnorderedMap::new(StorageKey::Tips.try_to_vec().unwrap());
+
         Self {
             deposits: old_contract.deposits,
             telegram_tips: old_contract.telegram_tips,
-            tips: HashMap::new(),
+            tips: new_tips,
+            version: migration_version,
+            withdraw_available: true,
+            tip_available: true,
+        }
+    }
+
+    #[init(ignore_state)]
+    pub fn migrate_state_2() -> Self {
+        let migration_version: u16 = 2;
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Private function");
+
+        #[derive(BorshDeserialize)]
+        struct OldContract {
+            deposits: HashMap<AccountId, Balance>,
+            telegram_tips: HashMap<String, Balance>,
+            tips: UnorderedMap<AccountId, Vec<Tip>>,
+            version: u16,
+            withdraw_available: bool,
+            tip_available: bool,
+        }
+
+        let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
+
+        let new_tips = UnorderedMap::new(StorageKey::Tips.try_to_vec().unwrap());
+
+        Self {
+            deposits: old_contract.deposits,
+            telegram_tips: old_contract.telegram_tips,
+            tips: new_tips,
             version: migration_version,
             withdraw_available: true,
             tip_available: true,
