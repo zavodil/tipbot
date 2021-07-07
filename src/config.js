@@ -18,7 +18,7 @@ function getConfig(env) {
             return {
                 networkId: 'testnet',
                 nodeUrl: 'https://rpc.testnet.near.org',
-                contractName: CONTRACT_NAME || 'dev-1620231986251-4297338',
+                contractName: CONTRACT_NAME || 'dev-1625611748901-26545259666408',
                 walletUrl: 'https://wallet.testnet.near.org',
                 helperUrl: 'https://helper.testnet.near.org',
                 explorerUrl: 'https://explorer.testnet.near.org',

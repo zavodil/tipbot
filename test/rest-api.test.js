@@ -277,7 +277,7 @@ describe("Withdraw or Transfer by not an Admin", () => {
 });
 
 
-const auth = new contract("dev-1625269866199-82732595966935");
+const auth = new contract("dev-1625611642901-32969379055293");
 const request_key = "63b2f81544f5ee526191c3f8b8fcccf8c8e7d689c0407ddd1fb91f20e66ca04c";
 const request_secret = "5bSXPcb1D4BT7KQWHxpMDpv8wvgyvcrbwYH55AcctZtpb1Vc6QQFgsL6evJ7HxuW2SrusPuDurHctELgr4X9JQwj";
 const WHITELIST_FEE = 0.0015;

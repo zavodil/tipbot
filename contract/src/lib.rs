@@ -10,8 +10,8 @@ pub type WrappedBalance = U128;
 pub type TelegramAccountId = u64;
 
 // TODO INIT Set telegram bot master account id
-//const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
-const MASTER_ACCOUNT_ID: &str = "zavodil.testnet";
+const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
+//const MASTER_ACCOUNT_ID: &str = "zavodil.testnet";
 
 const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000;
 // 0.003 NEAR
@@ -134,14 +134,14 @@ impl NearTips {
 
     fn get_linkdrop_contract() -> String {
         // TODO INIT
-        //"near".to_string() // mainnet
-        "linkdrop.zavodil.testnet".to_string() // testnet
+        "near".to_string() // mainnet
+        //"linkdrop.zavodil.testnet".to_string() // testnet
     }
 
     fn get_auth_contract() -> String {
         // TODO INIT
-        //"auth.name.near".to_string() // mainnet
-        "dev-1625611642901-32969379055293".to_string() // testnet
+        "auth.name.near".to_string() // mainnet
+        //"dev-1625611642901-32969379055293".to_string() // testnet
     }
 
     #[init]
@@ -261,7 +261,7 @@ impl NearTips {
                 contact,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                CALLBACK_GAS * 2,
+                CALLBACK_GAS * 3,
             ))
     }
 
@@ -601,7 +601,7 @@ impl NearTips {
                 balance_to_withdraw,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                CALLBACK_GAS * 2,
+                CALLBACK_GAS * 3,
             ))
     }
 
@@ -650,7 +650,7 @@ impl NearTips {
                 balance_to_withdraw,
                 &env::current_account_id(),
                 NO_DEPOSIT,
-                CALLBACK_GAS * 2,
+                CALLBACK_GAS * 3,
             ))
     }
 
@@ -865,6 +865,7 @@ impl NearTips {
             .collect()
     }
 
+    /*
     #[init(ignore_state)]
     pub fn migrate_state_1() -> Self {
         let migration_version: u16 = 1;
@@ -874,25 +875,19 @@ impl NearTips {
         struct OldContract {
             deposits: HashMap<AccountId, Balance>,
             telegram_tips: HashMap<String, Balance>,
-            tips: HashMap<AccountId, Vec<Tip_v1>>,
-            version: u16,
-            withdraw_available: bool,
-            tip_available: bool,
         }
 
         let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
 
-        let new_tips = UnorderedMap::new(StorageKey::Tips.try_to_vec().unwrap());
-
         Self {
             deposits: old_contract.deposits,
             telegram_tips: old_contract.telegram_tips,
-            tips: new_tips,
+            tips: HashMap::new(),
             version: migration_version,
             withdraw_available: true,
             tip_available: true,
         }
-    }
+    }*/
 
     #[init(ignore_state)]
     pub fn migrate_state_2() -> Self {
@@ -903,7 +898,7 @@ impl NearTips {
         struct OldContract {
             deposits: HashMap<AccountId, Balance>,
             telegram_tips: HashMap<String, Balance>,
-            tips: UnorderedMap<AccountId, Vec<Tip>>,
+            tips: HashMap<AccountId, Vec<Tip_v1>>,
             version: u16,
             withdraw_available: bool,
             tip_available: bool,
