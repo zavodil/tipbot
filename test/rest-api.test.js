@@ -115,6 +115,21 @@ describe("Deposit and Withdraw", () => {
         const alice_wallet_balance_2 = await near.accountNearBalance(alice);
         expect(utils.RoundFloat(alice_wallet_balance_2 - alice_wallet_balance_1)).toBeCloseTo(alice_deposit, 1);
     });
+
+    test('Deposit another account', async () => {
+        const alice_deposit_1 = await near.viewNearBalance("get_deposit", {account_id: alice});
+        const bob_wallet_balance_1 = await near.accountNearBalance(bob);
+
+        const deposit = await near.call("deposit_to_account", {account_id: alice},
+            {account_id: bob, tokens: utils.ConvertToNear(tip_size * 2)});
+        expect(deposit.type).not.toBe('FunctionCallError');
+
+        const alice_deposit_2 = await near.viewNearBalance("get_deposit", {account_id: alice});
+        const bob_wallet_balance_2 = await near.accountNearBalance(bob);
+
+        expect(utils.RoundFloat(alice_deposit_2 - alice_deposit_1)).toBe(tip_size * 2);
+        expect(utils.RoundFloat(bob_wallet_balance_1 - bob_wallet_balance_2)).toBeCloseTo(tip_size * 2, 1);
+    });
 });
 
 describe("Tip, transfer tip to deposit", () => {
@@ -171,6 +186,10 @@ describe("Tip, transfer tip to deposit", () => {
 
         // TODO transfer_tips_to_deposit_with_auth
     });
+});
+
+describe("Tip with referral cha_id", () => {
+
 });
 
 describe("Deposit, tip and withdraw from telegram", () => {
