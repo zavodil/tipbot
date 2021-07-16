@@ -9,10 +9,14 @@ use std::convert::TryFrom;
 
 pub type WrappedBalance = U128;
 pub type TelegramAccountId = u64;
+pub type TelegramChatId = u64;
+pub type RewardPoint = u16;
 
 // TODO INIT Set telegram bot master account id
 //const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
 const MASTER_ACCOUNT_ID: &str = "zavodil.testnet";
+
+const MIN_AMOUNT_TO_REWARD_CHAT: Balance = 100_000_000_000_000_000_000_000; // 0.1 NEAR
 
 const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000;
 // 0.003 NEAR
@@ -42,6 +46,7 @@ pub struct NearTips {
     telegram_tips: LookupMap<TelegramAccountId, Balance>,
     tips: LookupMap<AccountId, Vec<Tip>>,
     telegram_users_in_chats: LookupSet<TelegramUserInChat>,
+    chat_points: LookupMap<TelegramChatId, RewardPoint>,
     version: u16,
     withdraw_available: bool,
     tip_available: bool,
@@ -69,11 +74,10 @@ pub struct Contact {
     pub account_id: Option<TelegramAccountId>,
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
-#[serde(crate = "near_sdk::serde")]
+#[derive(BorshDeserialize, BorshSerialize)]
 pub struct TelegramUserInChat {
     pub telegram_id: TelegramAccountId,
-    pub chat_id: TelegramAccountId, // chat_id is negative, so don't forget * -1
+    pub chat_id: TelegramChatId, // chat_id is negative, so don't forget * -1
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Eq, PartialEq, Clone)]
@@ -115,7 +119,7 @@ pub trait ExtNearTips {
     fn on_get_contact_owner_on_withdraw_tip_for_undefined_account(&mut self, #[callback] account: Option<AccountId>, recipient_account_id: AccountId, recipient_contact: Contact, balance_to_withdraw: Balance) -> bool;
     fn on_withdraw_tip(&mut self, account_id: AccountId, contact: Contact, balance: Balance) -> bool;
     fn on_get_contact_owner_on_withdraw_from_telegram_with_auth(&mut self, #[callback] account: Option<AccountId>, recipient_account_id: AccountId, contact: Contact) -> bool;
-    fn on_get_contact_owner_on_send_tip_to_telegram_with_auth(&mut self, #[callback] account: Option<AccountId>, sender_account_id: AccountId, sender_deposit: Balance, tip_amount: Balance, telegram_account: TelegramAccountId, chat_id: Option<TelegramAccountId>) -> bool;
+    fn on_get_contact_owner_on_send_tip_to_telegram_with_auth(&mut self, #[callback] account: Option<AccountId>, sender_account_id: AccountId, sender_deposit: Balance, tip_amount: Balance, telegram_account: TelegramAccountId, chat_id: Option<TelegramChatId>) -> bool;
 }
 
 fn is_promise_success() -> bool {
@@ -135,6 +139,7 @@ fn is_promise_success() -> bool {
 pub enum StorageKey {
     Tips,
     TipsLookupMap,
+    ChatPointsLookupMap,
     TelegramTips,
     TelegramUsersInChats,
 }
@@ -164,6 +169,7 @@ impl NearTips {
             telegram_tips: LookupMap::new(StorageKey::TelegramTips.try_to_vec().unwrap()), // first object only for telegram tips
             tips: LookupMap::new(StorageKey::TipsLookupMap.try_to_vec().unwrap()), // generic object for any tips
             telegram_users_in_chats: LookupSet::new(StorageKey::TelegramUsersInChats.try_to_vec().unwrap()),
+            chat_points: LookupMap::new(StorageKey::ChatPointsLookupMap.try_to_vec().unwrap()),
             version: 0,
             withdraw_available: true,
             tip_available: true,
@@ -203,19 +209,36 @@ impl NearTips {
 
     /* INITIAL FUNCTIONS, using telegram_tips object */
 
-    pub fn get_balance(&self,
-                       telegram_account: TelegramAccountId) -> WrappedBalance {
+    pub fn get_balance(&self, telegram_account: TelegramAccountId) -> WrappedBalance {
         match self.telegram_tips.get(&telegram_account) {
             Some(balance) => WrappedBalance::from(balance),
             None => WrappedBalance::from(0)
         }
     }
 
+    pub fn claim_chat_points(&mut self) {
+        // TODO
+    }
+
+    pub fn get_chat_score(&self, chat_id: TelegramChatId) -> RewardPoint {
+        self.chat_points.get(&chat_id).unwrap_or(0)
+    }
+
+    pub fn get_telegram_users_in_chats(&self, telegram_id: TelegramAccountId,
+                                       chat_id: TelegramChatId) -> bool {
+        let user_in_chat: TelegramUserInChat = TelegramUserInChat {
+            telegram_id,
+            chat_id
+        };
+
+        self.telegram_users_in_chats.contains(&user_in_chat)
+    }
+
     pub(crate) fn send_tip_to_telegram_from_account(&mut self,
                                                     sender_account_id: AccountId,
                                                     telegram_account: TelegramAccountId,
                                                     amount: WrappedBalance,
-                                                    chat_id: Option<TelegramAccountId>) {
+                                                    chat_id: Option<TelegramChatId>) {
         assert!(self.tip_available, "Tips paused");
         assert!(amount.0 > 0, "Positive amount needed");
 
@@ -232,13 +255,30 @@ impl NearTips {
 
         self.deposits.insert(sender_account_id.clone(), deposit - amount.0);
 
+        if amount.0 > MIN_AMOUNT_TO_REWARD_CHAT && !chat_id.is_none() {
+            let chat_id_value = chat_id.unwrap();
+            let user_in_chat: TelegramUserInChat = TelegramUserInChat {
+                telegram_id: telegram_account,
+                chat_id: chat_id_value,
+            };
+
+            if !self.telegram_users_in_chats.contains(&user_in_chat) {
+                let chat_score: RewardPoint = self.chat_points.get(&chat_id_value).unwrap_or(0);
+                let new_score = chat_score + 1;
+                self.chat_points.insert(&chat_id_value, &new_score);
+                self.telegram_users_in_chats.insert(&user_in_chat);
+
+                env::log(format!("Reward point for chat {} added. Total: {}", chat_id_value, new_score).as_bytes());
+            }
+        }
+
         env::log(format!("@{} tipped {} yNEAR for telegram account {}", sender_account_id, amount.0, telegram_account).as_bytes());
     }
 
     pub fn send_tip_to_telegram(&mut self,
                                 telegram_account: TelegramAccountId,
                                 amount: WrappedBalance,
-                                chat_id: Option<TelegramAccountId>) {
+                                chat_id: Option<TelegramChatId>) {
         let account_id = env::predecessor_account_id();
         self.send_tip_to_telegram_from_account(account_id, telegram_account, amount, chat_id);
     }
@@ -246,7 +286,7 @@ impl NearTips {
     pub fn send_tip_to_telegram_with_auth(&mut self,
                                           telegram_account: TelegramAccountId,
                                           amount: WrappedBalance,
-                                          chat_id: Option<TelegramAccountId>) -> Promise {
+                                          chat_id: Option<TelegramChatId>) -> Promise {
         assert!(self.tip_available, "Tips paused");
         assert!(amount.0 > 0, "Positive amount needed");
 
@@ -284,7 +324,7 @@ impl NearTips {
                                                                   sender_deposit: Balance,
                                                                   tip_amount: Balance,
                                                                   telegram_account: TelegramAccountId,
-                                                                  chat_id: Option<TelegramAccountId>) {
+                                                                  chat_id: Option<TelegramChatId>) {
         assert_eq!(
             env::predecessor_account_id(),
             env::current_account_id(),
@@ -1051,6 +1091,7 @@ impl NearTips {
         let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
         let telegram_users_in_chats = LookupSet::new(StorageKey::TelegramUsersInChats.try_to_vec().unwrap());
         let tips_new = LookupMap::new(StorageKey::TipsLookupMap.try_to_vec().unwrap());
+        let chat_points = LookupMap::new(StorageKey::ChatPointsLookupMap.try_to_vec().unwrap());
 
         let mut telegram_tips_new = LookupMap::new(StorageKey::TelegramTips.try_to_vec().unwrap());
 
@@ -1068,6 +1109,7 @@ impl NearTips {
             telegram_tips: telegram_tips_new,
             tips: tips_new,
             telegram_users_in_chats,
+            chat_points,
             version: migration_version,
             withdraw_available: old_contract.withdraw_available,
             tip_available: old_contract.tip_available,

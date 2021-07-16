@@ -6,6 +6,7 @@ const utils = require('./utils');
 const alice = "grant.testnet";
 const alice_contact_handler = "alice_contact_01";
 const alice_contact_id = 1234;
+const alice_chat_id = Date.now();
 const bob = "place.testnet";
 const bob_contact_handler = "bob_contact_02";
 const bob_contact_id = 4565;
@@ -188,7 +189,63 @@ describe("Tip, transfer tip to deposit", () => {
     });
 });
 
-describe("Tip with referral cha_id", () => {
+describe("Tip with referral chat_id", () => {
+    test("Tip with chat_id", async () => {
+        await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
+        await near.call("deposit", {}, {account_id: bob, tokens: utils.ConvertToNear(deposit_size)});
+
+        const chat_score_1 = await near.viewNearBalance("get_chat_score", {chat_id: alice_chat_id});
+        expect(chat_score_1).toBe(0);
+
+        const send_tip_to_telegram_1 = await near.call("send_tip_to_telegram", {
+            telegram_account: alice_contact_id,
+            amount: utils.ConvertToNear(tip_size),
+            chat_id: alice_chat_id
+        }, {
+            account_id: alice
+        });
+        expect(send_tip_to_telegram_1.type).not.toBe('FunctionCallError');
+
+        const chat_score_2 = await near.view("get_chat_score", {chat_id: alice_chat_id});
+
+        expect(chat_score_2 - chat_score_1).toBe(1);
+
+        const send_tip_to_telegram_2_too_small = await near.call("send_tip_to_telegram", {
+            telegram_account: alice_contact_id,
+            amount: utils.ConvertToNear(0.00001),
+            chat_id: alice_chat_id
+        }, {
+            account_id: alice
+        });
+        expect(send_tip_to_telegram_2_too_small.type).not.toBe('FunctionCallError');
+
+        const chat_score_3 = await near.view("get_chat_score", {chat_id: alice_chat_id});
+        expect(chat_score_3).toBe(chat_score_2);
+
+        const send_tip_to_telegram_3 = await near.call("send_tip_to_telegram", {
+            telegram_account: bob_contact_id,
+            amount: utils.ConvertToNear(tip_size),
+            chat_id: alice_chat_id
+        }, {
+            account_id: bob
+        });
+        expect(send_tip_to_telegram_3.type).not.toBe('FunctionCallError');
+
+        const chat_score_4 = await near.view("get_chat_score", {chat_id: alice_chat_id});
+        expect(chat_score_4 - chat_score_1).toBe(2);
+
+        const send_tip_to_telegram_again = await near.call("send_tip_to_telegram", {
+            telegram_account: bob_contact_id,
+            amount: utils.ConvertToNear(tip_size),
+            chat_id: alice_chat_id
+        }, {
+            account_id: bob
+        });
+        expect(send_tip_to_telegram_again.type).not.toBe('FunctionCallError');
+
+        const chat_score_5 = await near.view("get_chat_score", {chat_id: alice_chat_id});
+        expect(chat_score_4).toBe(chat_score_5);
+    });
 
 });
 
