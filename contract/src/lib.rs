@@ -60,6 +60,8 @@ pub struct NearTips {
     withdraw_available: bool,
     tip_available: bool,
     generic_tips_available: bool,
+
+    telegram_tips_v1: HashMap<String, Balance>
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
@@ -203,6 +205,8 @@ impl NearTips {
             withdraw_available: true,
             tip_available: true,
             generic_tips_available: false,
+
+            telegram_tips_v1: HashMap::new(),
         }
     }
 
@@ -1361,6 +1365,7 @@ impl NearTips {
     #[init(ignore_state)]
     #[allow(dead_code)]
     pub fn migrate_state_3() -> Self { // add telegram_users_in_chats, Migration to
+        /*
         let migration_version: u16 = 3;
         assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Private function");
 
@@ -1421,8 +1426,125 @@ impl NearTips {
             withdraw_available: old_contract.withdraw_available,
             tip_available: old_contract.tip_available,
             generic_tips_available: false,
+
+            telegram_tips_v1: HashMap::new(),
+        }
+        */
+    }
+
+    #[init(ignore_state)]
+    #[allow(dead_code)]
+    pub fn migrate_state_3_1() -> Self { // add telegram_users_in_chats, Migration to
+        let migration_version: u16 = 2;
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Private function");
+
+        #[derive(BorshDeserialize)]
+        struct OldContract {
+            deposits: HashMap<AccountId, Balance>,
+            telegram_tips: HashMap<String, Balance>,
+            tips: UnorderedMap<AccountId, Vec<Tip>>,
+            version: u16,
+            withdraw_available: bool,
+            tip_available: bool,
+        }
+
+        let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
+        let telegram_users_in_chats = LookupSet::new(StorageKey::TelegramUsersInChats);
+        let tips_new = LookupMap::new(StorageKey::TipsLookupMap);
+        let chat_points = LookupMap::new(StorageKey::ChatPointsLookupMap);
+
+        let near_account_id: TokenAccountId = NEAR.to_string();
+        let telegram_tips_new = LookupMap::new();
+
+        let mut deposits_new = LookupMap::new(StorageKey::TelegramDepositsLookupMap);
+        for (account_id, deposit) in &old_contract.deposits {
+            deposits_new.insert(
+                &TokenByNearAccount {
+                    account_id: account_id.to_string(),
+                    token_account_id: near_account_id.clone(),
+                },
+                deposit,
+            );
+        }
+
+        let mut whitelisted_tokens_new = LookupSet::new(StorageKey::WhitelistedTokensLookupSet);
+        whitelisted_tokens_new.insert(&near_account_id);
+
+        let old_telegram_tips_v1 = HashMap::new();
+
+        Self {
+            deposits: deposits_new,
+            telegram_tips: telegram_tips_new,
+            tips: tips_new,
+            telegram_users_in_chats,
+            chat_points,
+            whitelisted_tokens: whitelisted_tokens_new,
+            version: migration_version,
+            withdraw_available: old_contract.withdraw_available,
+            tip_available: old_contract.tip_available,
+            generic_tips_available: false,
+
+            telegram_tips_v1: old_contract.telegram_tips
         }
     }
+
+    #[init(ignore_state)]
+    #[allow(dead_code)]
+    pub fn migrate_state_3_2() -> Self { // add telegram_users_in_chats, Migration to
+        let migration_version: u16 = 3;
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Private function");
+
+        #[derive(BorshDeserialize)]
+        struct OldContract {
+            telegram_tips_v1: HashMap<String, Balance>,
+
+            deposits: LookupMap<TokenByNearAccount, Balance>,
+            telegram_tips: LookupMap<TokenByTelegramAccount, Balance>,
+            tips: LookupMap<AccountId, Vec<Tip>>,
+            telegram_users_in_chats: LookupSet<TelegramUserInChat>,
+            chat_points: LookupMap<TelegramChatId, RewardPoint>,
+            whitelisted_tokens: LookupSet<TokenAccountId>,
+            version: u16,
+            withdraw_available: bool,
+            tip_available: bool,
+            generic_tips_available: bool,
+        }
+
+        let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
+
+        let near_account_id: TokenAccountId = NEAR.to_string();
+        let mut telegram_tips_new = LookupMap::new(StorageKey::TelegramTipsLookupMap);
+
+        for (telegram_account, amount) in &old_contract.telegram_tips_v1 {
+            let telegram_id = telegram_account.parse::<u64>().unwrap_or(0);
+            if telegram_id > 0 {
+                telegram_tips_new.insert(
+                    &TokenByTelegramAccount {
+                        telegram_account: telegram_id,
+                        token_account_id: near_account_id.clone(),
+                    },
+                    amount);
+            } else {
+                env::log(format!("Invalid telegram_account {}", telegram_account).as_bytes());
+            }
+        }
+
+        Self {
+            deposits: old_contract.deposits,
+            telegram_tips: telegram_tips_new,
+            tips: old_contract.tips,
+            telegram_users_in_chats: old_contract.telegram_users_in_chats,
+            chat_points: old_contract.chat_points,
+            whitelisted_tokens: old_contract.whitelisted_tokens,
+            version: migration_version,
+            withdraw_available: old_contract.withdraw_available,
+            tip_available: old_contract.tip_available,
+            generic_tips_available: old_contract.generic_tips_available,
+
+            telegram_tips_v1: HashMap::new(),
+        }
+    }
+
     /*
       #[init(ignore_state)]
       #[allow(dead_code)]
