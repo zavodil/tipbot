@@ -171,7 +171,7 @@ pub enum StorageKey {
     TelegramTipsLookupMap,
     TelegramDeposits,
     TelegramUsersInChats,
-    WhitelistedTokensLookupSet,
+    WhitelistedTokensLookupSet
 }
 
 #[near_bindgen]
@@ -1364,7 +1364,7 @@ impl NearTips {
 
     #[init(ignore_state)]
     #[allow(dead_code)]
-    pub fn migrate_state_3() -> Self { // add telegram_users_in_chats, Migration to
+    pub fn migrate_state_3() /*-> Self*/ { // add telegram_users_in_chats, Migration to
         /*
         let migration_version: u16 = 3;
         assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Private function");
@@ -1454,7 +1454,7 @@ impl NearTips {
         let chat_points = LookupMap::new(StorageKey::ChatPointsLookupMap);
 
         let near_account_id: TokenAccountId = NEAR.to_string();
-        let telegram_tips_new = LookupMap::new();
+        let telegram_tips_new = LookupMap::new(b"a".to_vec());
 
         let mut deposits_new = LookupMap::new(StorageKey::TelegramDepositsLookupMap);
         for (account_id, deposit) in &old_contract.deposits {
@@ -1469,8 +1469,6 @@ impl NearTips {
 
         let mut whitelisted_tokens_new = LookupSet::new(StorageKey::WhitelistedTokensLookupSet);
         whitelisted_tokens_new.insert(&near_account_id);
-
-        let old_telegram_tips_v1 = HashMap::new();
 
         Self {
             deposits: deposits_new,
@@ -1496,8 +1494,6 @@ impl NearTips {
 
         #[derive(BorshDeserialize)]
         struct OldContract {
-            telegram_tips_v1: HashMap<String, Balance>,
-
             deposits: LookupMap<TokenByNearAccount, Balance>,
             telegram_tips: LookupMap<TokenByTelegramAccount, Balance>,
             tips: LookupMap<AccountId, Vec<Tip>>,
@@ -1508,6 +1504,8 @@ impl NearTips {
             withdraw_available: bool,
             tip_available: bool,
             generic_tips_available: bool,
+
+            telegram_tips_v1: HashMap<String, Balance>,
         }
 
         let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
