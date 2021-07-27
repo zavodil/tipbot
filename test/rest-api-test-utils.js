@@ -32,12 +32,12 @@ contract.prototype.viewNearBalance = async function (method, params, options) {
     return await this.view(method, params, options);
 };
 
-contract.prototype.accountNearBalance = async function (account_id) {
-    try {
-        return await utils.GetResponse("balance", account_id, {convertToNear: true});
-    } catch (e) {
-        throw new Error("AccountNearBalance error for " + JSON.stringify(account_id) + ". Error: " + e.message);
-    }
+contract.prototype.accountNearBalance = async function (account_id, delay) {
+    delay = delay || 500;
+    await timeout(delay);
+
+    return await utils.GetResponse("balance", account_id, {convertToNear: true})
+        .catch(e => console.error("AccountNearBalance error for " + JSON.stringify(account_id) + ". Error: " + e.message));
 };
 
 contract.prototype.call = async function (method, params, options) {
@@ -52,11 +52,12 @@ contract.prototype.call = async function (method, params, options) {
         contract: this.contract_id,
     };
 
-    try {
-        return await utils.PostResponse("call", body);
-    } catch (e) {
-        throw new Error("Call error for " + JSON.stringify(body) + ". Error: " + e.message);
-    }
+    return await utils.PostResponse("call", body)
+        .catch(e => console.error("Call error for " + JSON.stringify(body) + ". Error: " + e.message));
 };
+
+function timeout(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 module.exports = contract;

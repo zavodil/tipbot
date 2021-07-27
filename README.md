@@ -1,3 +1,9 @@
+export NODE_ENV=mainnet
+
+near deploy --accountId=tipbot.app.near --wasmFile=/var/www/html/nearspace.info/apps/tips/out/main.wasm
+near view tipbot.app.near get_version '{}'
+near call tipbot.app.near migrate_state_2 '{}' --accountId=tipbot.app.near 
+
 tipbot 
 ------------------
 

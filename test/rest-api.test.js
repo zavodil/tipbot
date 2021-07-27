@@ -15,17 +15,24 @@ const carol = process.env.REACT_CONTRACT_ID; // without contacts
 const carol_contact = "";
 const carol_contact_id = 9876543210;
 
+const tipbot_account_id = process.env.REACT_CONTRACT_ID;
+const ft_contract_account_id = "token.zavodil.testnet";
 
 const deposit_size = 4.678;
 const tip_size = 0.5234;
 const admin_commission = 0.003;
 
-const near = new contract(process.env.REACT_CONTRACT_ID);
+
+const ft_deposit_size = "4678";
+const ft_tip_size = "5234";
+const ft_admin_commission = 3;
+
+const near = new contract(tipbot_account_id);
 
 describe("Contract set", () => {
-    test("Contract is not null " + process.env.REACT_CONTRACT_ID, async () => {
+    test("Contract is not null " + tipbot_account_id, async () => {
         //const contractName = await near.deploy("tipbot.wasm");
-        expect(process.env.REACT_CONTRACT_ID).not.toBe(undefined)
+        expect(tipbot_account_id).not.toBe(undefined)
     });
 
     test('Accounts has enough funds', async () => {
@@ -256,6 +263,7 @@ describe("Deposit, tip and withdraw from telegram", () => {
         const send_tip_to_telegram = await near.call("send_tip_to_telegram", {
             telegram_account: bob_contact_id,
             amount: utils.ConvertToNear(tip_size),
+            hint: "Withdraw from telegram-1"
         }, {
             account_id: alice
         });
@@ -264,31 +272,38 @@ describe("Deposit, tip and withdraw from telegram", () => {
         const bob_balance = await near.viewNearBalance("get_balance", {telegram_account: bob_contact_id});
         const bob_wallet_balance_1 = await near.accountNearBalance(bob);
 
+        console.warn(bob_wallet_balance_1);
+
         let withdraw_1 = await near.call("withdraw_from_telegram", {
             telegram_account: bob_contact_id,
             account_id: bob,
+            hint: "Withdraw from telegram-2"
         }, {
             account_id: admin
         });
         expect(withdraw_1.type).not.toBe('FunctionCallError');
 
-        const bob_wallet_balance_2 = await near.accountNearBalance(bob);
-        expect(utils.RoundFloat(bob_wallet_balance_2 - bob_wallet_balance_1)).toBe(bob_balance - admin_commission);
+        const bob_wallet_balance_2 = await near.accountNearBalance(bob, 1000);
+
+        console.warn(bob_wallet_balance_2);
+        expect(utils.RoundFloat(bob_wallet_balance_2 - bob_wallet_balance_1)).toBeCloseTo(bob_balance - admin_commission, 5);
 
         const withdraw_2_illegal = await near.call("withdraw_from_telegram", {
             telegram_account: bob_contact_id,
             account_id: bob,
+            hint: "Withdraw from telegram-3"
         }, {
             account_id: admin
         });
         expect(withdraw_2_illegal.type).toBe('FunctionCallError');
 
-        const bob_wallet_balance_3 = await near.accountNearBalance(bob);
+        const bob_wallet_balance_3 = await near.accountNearBalance(bob, 1000);
         expect(utils.RoundFloat(bob_wallet_balance_3 - bob_wallet_balance_2)).toBeCloseTo(0, 1);
 
         let withdraw_3_no_funds = await near.call("withdraw_from_telegram", {
             telegram_account: bob_contact_id,
             account_id: bob,
+            hint: "Withdraw from telegram-4"
         }, {
             account_id: admin
         });
@@ -349,6 +364,53 @@ describe("Withdraw or Transfer by not an Admin", () => {
 
         expect(illegal_transfer.type).toBe('FunctionCallError');
         expect(illegal_transfer.kind.ExecutionError).toMatch(/(No access)/i);
+    });
+});
+
+const ft = new contract(ft_contract_account_id);
+/* Deploy token
+near create-account token.zavodil.testnet --masterAccount=zavodil.testnet --initialBalance=3
+near deploy token.zavodil.testnet /var/www/html/nearspace.info/apps/fungible_token.wasm new '{"owner_id": "zavodil.testnet", "total_supply": "1000000000000000000000000", "metadata": {"spec": "ft-1.0.0", "name": "Zavodil Token", "symbol": "ZAV", "decimals": 18}}'
+
+near call token.zavodil.testnet storage_deposit '{}' --accountId dev-1627303090343-79183490719853 --deposit 0.2
+
+Transfer
+near call token.zavodil.testnet storage_deposit '{}' --accountId grant.testnet --deposit 0.1
+near call token.zavodil.testnet ft_transfer '{"receiver_id": "grant.testnet", "amount": "1000000"}' --accountId zavodil.testnet --amount 0.000000000000000000000001
+ */
+
+describe("Tip FT", () => {
+    test("Fail on not whitelisted token", async () => {
+        const illegal_token = await near.call("send_tip_to_telegram", {
+            telegram_account: bob_contact_id,
+            amount: utils.ConvertToNear(ft_tip_size),
+            token_id: "testnet"
+        }, {
+            account_id: alice
+        });
+        expect(illegal_token.type).toBe('FunctionCallError');
+        expect(illegal_token.kind.ExecutionError).toMatch(/(Token wasn't whitelisted)/i);
+
+        const whitelist_token = await near.call("whitelist_token", {
+            token_id: ft_contract_account_id,
+        }, {
+            account_id: admin
+        });
+        expect(whitelist_token.type).not.toBe('FunctionCallError');
+    });
+
+    test("Deposit FT", async () => {
+        const alice_deposit_1 = await near.view("get_deposit",
+            {account_id: alice, token_id: ft_contract_account_id});
+
+        const deposit = await ft.call("ft_transfer_call",
+            {receiver_id: tipbot_account_id, amount: ft_deposit_size, msg: ""},
+            {account_id: alice, tokens: 1});
+        expect(deposit.type).not.toBe('FunctionCallError');
+
+        const alice_deposit_2 = await near.view("get_deposit",
+            {account_id: alice, token_id: ft_contract_account_id});
+        expect(utils.RoundFloat(alice_deposit_2) - utils.RoundFloat(alice_deposit_1)).toBe(utils.RoundFloat(ft_deposit_size));
     });
 });
 
