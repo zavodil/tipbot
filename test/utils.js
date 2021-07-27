@@ -12,6 +12,10 @@ module.exports = {
         return utils.format.formatNearAmount(value, frac_digits).replace(",", "");
     },
 
+    ConvertFromDai: (value) => {
+        return (Math.round(value / 100000000000000) / 10000);
+    },
+
     ConvertToNear: (amount) => {
         return new BN(Math.round(amount * 100000000)).mul(new BN("10000000000000000")).toString();
     },
@@ -27,7 +31,7 @@ module.exports = {
             const credentials = JSON.parse(fs.readFileSync(keyPath));
             return (credentials.private_key);
         } catch (e) {
-            throw new Error("Key not found for account " + keyPath + ". Error: " + e.message);
+            console.error("Key not found for account " + keyPath + ". Error: " + e.message);
         }
     },
 
@@ -41,11 +45,14 @@ module.exports = {
         })
             .then(res => {
                 return res.text().then(response => {
-                    if (options && options.convertToNear) {
+                    if (options && (options.convertToNear || options.convertFromDai)) {
                         if (isNaN(response))
                             throw new Error(`Illegal balance value. Request: ${JSON.stringify(body)}. Response: ${response}`);
 
-                        return module.exports.RoundFloat(module.exports.ConvertYoctoNear(response, config.FRACTION_DIGITS));
+                        if(options.convertFromDai)
+                            return module.exports.RoundFloat(module.exports.ConvertFromDai(response, config.FRACTION_DIGITS));
+                        else
+                            return module.exports.RoundFloat(module.exports.ConvertYoctoNear(response, config.FRACTION_DIGITS));
                     } else {
                         try {
                             const json = JSON.parse(response);

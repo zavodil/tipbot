@@ -23,9 +23,13 @@ const tip_size = 0.5234;
 const admin_commission = 0.003;
 
 
-const ft_deposit_size = "4678";
-const ft_tip_size = "5234";
-const ft_admin_commission = 3;
+const ft_deposit_size = ConvertToPow18(4.567);
+const ft_tip_size = ConvertToPow18(0.345);
+const ft_admin_commission = ConvertToPow18(0.003);
+
+function ConvertToPow18(amount) {
+    return (Math.round(amount * 100000000)).toString() + "0000000000";
+}
 
 const near = new contract(tipbot_account_id);
 
@@ -372,18 +376,20 @@ const ft = new contract(ft_contract_account_id);
 near create-account token.zavodil.testnet --masterAccount=zavodil.testnet --initialBalance=3
 near deploy token.zavodil.testnet /var/www/html/nearspace.info/apps/fungible_token.wasm new '{"owner_id": "zavodil.testnet", "total_supply": "1000000000000000000000000", "metadata": {"spec": "ft-1.0.0", "name": "Zavodil Token", "symbol": "ZAV", "decimals": 18}}'
 
-near call token.zavodil.testnet storage_deposit '{}' --accountId dev-1627303090343-79183490719853 --deposit 0.2
+near call token.zavodil.testnet storage_deposit '{}' --accountId dev-1627413035410-28580707707350 --deposit 0.2
 
 Transfer
 near call token.zavodil.testnet storage_deposit '{}' --accountId grant.testnet --deposit 0.1
-near call token.zavodil.testnet ft_transfer '{"receiver_id": "grant.testnet", "amount": "1000000"}' --accountId zavodil.testnet --amount 0.000000000000000000000001
+near call token.zavodil.testnet storage_deposit '{}' --accountId place.testnet --deposit 0.1
+near call token.zavodil.testnet ft_transfer '{"receiver_id": "grant.testnet", "amount": "1000000000000000000000"}' --accountId zavodil.testnet --amount 0.000000000000000000000001
+near call token.zavodil.testnet ft_transfer '{"receiver_id": "place.testnet", "amount": "1000000000000000000000"}' --accountId zavodil.testnet --amount 0.000000000000000000000001
  */
 
 describe("Tip FT", () => {
     test("Fail on not whitelisted token", async () => {
         const illegal_token = await near.call("send_tip_to_telegram", {
             telegram_account: bob_contact_id,
-            amount: utils.ConvertToNear(ft_tip_size),
+            amount: ft_tip_size,
             token_id: "testnet"
         }, {
             account_id: alice
@@ -411,6 +417,60 @@ describe("Tip FT", () => {
         const alice_deposit_2 = await near.view("get_deposit",
             {account_id: alice, token_id: ft_contract_account_id});
         expect(utils.RoundFloat(alice_deposit_2) - utils.RoundFloat(alice_deposit_1)).toBe(utils.RoundFloat(ft_deposit_size));
+    });
+
+    test("Send FT tips", async () => {
+        const bob_tips_1 = await near.viewDaiBalance("get_balance",
+            {telegram_account: bob_contact_id, token_id: ft_contract_account_id});
+        const alice_deposit_1 = await near.viewDaiBalance("get_deposit",
+            {account_id: alice, token_id: ft_contract_account_id});
+
+        const sent_tip = await near.call("send_tip_to_telegram",
+            {telegram_account: bob_contact_id, amount: ft_tip_size, token_id: ft_contract_account_id},
+            {account_id: alice});
+        expect(sent_tip.type).not.toBe('FunctionCallError');
+
+        const bob_tips_2 = await near.viewDaiBalance("get_balance",
+            {telegram_account: bob_contact_id, token_id: ft_contract_account_id});
+        const alice_deposit_2 = await near.viewDaiBalance("get_deposit",
+            {account_id: alice, token_id: ft_contract_account_id});
+
+        expect(utils.RoundFloat(alice_deposit_1 - alice_deposit_2)).toBe(utils.ConvertFromDai(ft_tip_size));
+        expect(utils.RoundFloat(bob_tips_2 - bob_tips_1)).toBe(utils.ConvertFromDai(ft_tip_size));
+
+        const sent_tip_2 = await near.call("send_tip_to_telegram",
+            {telegram_account: bob_contact_id, amount: ft_tip_size, token_id: ft_contract_account_id},
+            {account_id: alice});
+        expect(sent_tip_2.type).not.toBe('FunctionCallError');
+
+        const bob_tips_3 = await near.viewDaiBalance("get_balance",
+            {telegram_account: bob_contact_id, token_id: ft_contract_account_id});
+        const alice_deposit_3 = await near.viewDaiBalance("get_deposit",
+            {account_id: alice, token_id: ft_contract_account_id});
+
+        expect(utils.RoundFloat(alice_deposit_1 - alice_deposit_3)).toBe(utils.ConvertFromDai(ft_tip_size) * 2);
+        expect(utils.RoundFloat(bob_tips_3 - bob_tips_1)).toBe(utils.ConvertFromDai(ft_tip_size) * 2);
+    });
+
+    test("Withdraw FT tips", async () => {
+        const bob_ft_balance_1 = await ft.viewDaiBalance("ft_balance_of", {account_id: bob});
+
+        const bob_tips_1 = await near.viewDaiBalance("get_balance",
+            {telegram_account: bob_contact_id, token_id: ft_contract_account_id});
+        expect(utils.RoundFloat(bob_tips_1)).toBeGreaterThan(0);
+
+        const withdraw = await near.call("withdraw_from_telegram",
+            {telegram_account: bob_contact_id, account_id: bob, token_id: ft_contract_account_id},
+            {account_id: admin});
+        expect(withdraw.type).not.toBe('FunctionCallError');
+
+        const bob_tips_2 = await near.viewDaiBalance("get_balance",
+            {telegram_account: bob_contact_id, token_id: ft_contract_account_id});
+
+        const bob_ft_balance_2 = await ft.viewDaiBalance("ft_balance_of", {account_id: bob});
+
+        expect(utils.RoundFloat(bob_tips_2)).toBe(0);
+        expect(utils.RoundFloat(bob_ft_balance_2 - bob_ft_balance_1)).toBe(bob_tips_1);
     });
 });
 

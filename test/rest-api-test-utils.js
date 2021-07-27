@@ -32,6 +32,12 @@ contract.prototype.viewNearBalance = async function (method, params, options) {
     return await this.view(method, params, options);
 };
 
+contract.prototype.viewDaiBalance = async function (method, params, options) {
+    options = options || {};
+    options.convertFromDai = true;
+    return await this.view(method, params, options);
+};
+
 contract.prototype.accountNearBalance = async function (account_id, delay) {
     delay = delay || 500;
     await timeout(delay);
