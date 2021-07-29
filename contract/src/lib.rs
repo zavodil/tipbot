@@ -14,18 +14,26 @@ pub type TelegramChatId = u64;
 pub type RewardPoint = u32;
 pub type TokenAccountId = AccountId;
 
-// TODO INIT Set telegram bot master account id
-//const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
+// UPDATE BEFORE DEPLOYMENT
+
+const MASTER_ACCOUNT_ID: &str = "nearup_bot.app.near";
+const LINKDROP_ACCOUNT_ID: &str = "near";
+const AUTH_ACCOUNT_ID: &str = "auth.name.near";
+/*
 const MASTER_ACCOUNT_ID: &str = "zavodil.testnet";
+const LINKDROP_ACCOUNT_ID: &str = "linkdrop.zavodil.testnet";
+const AUTH_ACCOUNT_ID: &str = "dev-1625611642901-32969379055293";
+*/
+const UNDEFINED_ACCOUNT_ID: &str = "";
 
+// 0.1 NEAR
 const MIN_AMOUNT_TO_REWARD_CHAT: Balance = 100_000_000_000_000_000_000_000;
-// 0.1 NEAR
 const MIN_DEPOSIT_NEAR: Balance = 100_000_000_000_000_000_000_000;
-// 0.1 NEAR
-const MIN_DEPOSIT_FT: Balance = 100_000_000_000_000_000; // 0.1
+const MIN_DEPOSIT_FT: Balance = 100_000_000_000_000_000;
 
-const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000;
 // 0.003 NEAR
+const WITHDRAW_COMMISSION: Balance = 3_000_000_000_000_000_000_000;
+
 const ACCESS_KEY_ALLOWANCE: Balance = 1_000_000_000_000_000_000_000_000;
 const BASE_GAS: Gas = 25_000_000_000_000;
 const CALLBACK_GAS: Gas = 25_000_000_000_000;
@@ -63,7 +71,7 @@ pub struct NearTips {
     tip_available: bool,
     generic_tips_available: bool,
 
-    telegram_tips_v1: HashMap<String, Balance>,
+    telegram_tips_v1: HashMap<String, Balance>, // empty, used for migration
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
@@ -100,7 +108,6 @@ pub struct TokenByTelegramAccount {
     pub token_account_id: TokenAccountId,
 }
 
-
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct TelegramUserInChat {
     pub telegram_id: TelegramAccountId,
@@ -136,8 +143,6 @@ pub enum ContactCategories {
 
 #[ext_contract(ext_self)]
 pub trait ExtNearTips {
-    //fn on_withdraw_from_telegram(&mut self, predecessor_account_id: AccountId, amount: Balance, telegram_account: TelegramAccountId) -> bool;
-    //fn on_withdraw_from_telegram_without_commission(&mut self, predecessor_account_id: AccountId, amount: Balance, telegram_account: TelegramAccountId) -> bool;
     fn on_withdraw(&mut self, predecessor_account_id: AccountId, deposit: Balance, token_id: Option<TokenAccountId>) -> bool;
     fn on_withdraw_linkdrop(&mut self, amount: Balance, telegram_account: TelegramAccountId, public_key: String) -> bool;
     fn on_get_contacts_on_withdraw_tip_for_current_account(&mut self, #[callback] contacts: Option<Vec<Contact>>, recipient_account_id: AccountId, recipient_contact: Contact, balance: Balance) -> bool;
@@ -148,7 +153,8 @@ pub trait ExtNearTips {
     fn on_get_contact_owner_on_withdraw_from_telegram_with_auth(&mut self, #[callback] account: Option<AccountId>, recipient_account_id: AccountId, contact: Contact, token_id: Option<TokenAccountId>) -> bool;
     fn on_get_contact_owner_on_send_tip_to_telegram_with_auth(&mut self, #[callback] account: Option<AccountId>, sender_account_id: AccountId, tip_amount: Balance, telegram_account: TelegramAccountId, chat_id: Option<TelegramChatId>, token_id: Option<TokenAccountId>) -> bool;
 
-    fn after_ft_transfer(&mut self, telegram_account: TelegramAccountId, amount: WrappedBalance) -> bool;
+    fn after_ft_transfer_balance(&mut self, telegram_account: TelegramAccountId, amount: WrappedBalance, token_account_id: TokenAccountId) -> bool;
+    fn after_ft_transfer_deposit(&mut self, account_id: AccountId, amount: WrappedBalance, token_account_id: TokenAccountId) -> bool;
 }
 
 fn is_promise_success() -> bool {
@@ -178,22 +184,6 @@ pub enum StorageKey {
 
 #[near_bindgen]
 impl NearTips {
-    fn get_undefined_account() -> String {
-        "".to_string()
-    }
-
-    fn get_linkdrop_contract() -> String {
-        // TODO INIT
-        //"near".to_string() // mainnet
-        "linkdrop.zavodil.testnet".to_string() // testnet
-    }
-
-    fn get_auth_contract() -> String {
-        // TODO INIT
-        //"auth.name.near".to_string() // mainnet
-        "dev-1625611642901-32969379055293".to_string() // testnet
-    }
-
     #[init]
     pub fn new() -> Self {
         Self {
@@ -265,6 +255,20 @@ impl NearTips {
             }).unwrap_or(0).into()
     }
 
+    pub fn get_deposits(&self,
+                        account_id: AccountId,
+                        token_ids: Vec<TokenAccountId>,
+    ) -> HashMap<TokenAccountId, WrappedBalance> {
+        token_ids
+            .iter()
+            .map(|token_account_id|
+                (
+                    token_account_id.clone(),
+                    self.get_deposit(account_id.clone(), Some(token_account_id.clone()))
+                ))
+            .collect()
+    }
+
     pub fn get_balance(&self,
                        telegram_account: TelegramAccountId,
                        token_id: Option<TokenAccountId>,
@@ -275,6 +279,20 @@ impl NearTips {
                 token_account_id: NearTips::unwrap_token_id(token_id.clone()),
             }
         ).unwrap_or(0).into()
+    }
+
+    pub fn get_balances(&self,
+                        telegram_account: TelegramAccountId,
+                        token_ids: Vec<TokenAccountId>,
+    ) -> HashMap<TokenAccountId, WrappedBalance> {
+        token_ids
+            .iter()
+            .map(|token_account_id|
+                (
+                    token_account_id.clone(),
+                    self.get_balance(telegram_account, Some(token_account_id.clone())),
+                ))
+            .collect()
     }
 
     pub fn claim_chat_points(&mut self) {
@@ -378,7 +396,7 @@ impl NearTips {
             account_id: Some(telegram_account.clone()),
         };
 
-        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
+        self.get_contact_owner(contact.clone(), AUTH_ACCOUNT_ID.to_string()).
             then(ext_self::on_get_contact_owner_on_send_tip_to_telegram_with_auth(
                 account_id,
                 amount.0,
@@ -457,7 +475,7 @@ impl NearTips {
                                   token_id: Option<TokenAccountId>) -> Promise { // TODO FT ft_on_transfer
         assert!(self.withdraw_available, "Withdrawals paused");
         assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
-        //assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
+        assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
         let balance: Balance = self.get_balance(telegram_account.clone(), token_id.clone()).0;
 
@@ -499,9 +517,10 @@ impl NearTips {
                 ONE_YOCTO,
                 GAS_FOR_FT_TRANSFER,
             )
-                .then(ext_self::after_ft_transfer(
+                .then(ext_self::after_ft_transfer_balance(
                     telegram_account,
                     amount.into(),
+                    token_id_unwrapped,
                     &env::current_account_id(),
                     NO_DEPOSIT,
                     GAS_FOR_AFTER_FT_TRANSFER,
@@ -510,10 +529,11 @@ impl NearTips {
     }
 
 
-    pub fn after_ft_transfer(
+    pub fn after_ft_transfer_balance(
         &mut self,
         telegram_account: TelegramAccountId,
         amount: WrappedBalance,
+        token_account_id: TokenAccountId
     ) -> bool {
         assert_eq!(
             env::predecessor_account_id(),
@@ -523,30 +543,65 @@ impl NearTips {
 
         let promise_success = is_promise_success();
         if !is_promise_success() {
-            let token_account_id = env::predecessor_account_id();
             log!(
-                "Token {} withdraw by telegram account {} failed. Amount {}",
+                "Token {} withdraw by telegram account {} failed. Amount to recharge: {}",
                 token_account_id,
                 telegram_account,
                 amount.0
             );
+
+            let current_balance = self.get_balance(telegram_account, Some(token_account_id.clone()));
 
             self.telegram_tips.insert(
                 &TokenByTelegramAccount {
                     telegram_account,
                     token_account_id,
                 },
-                &amount.0);
+                &(current_balance.0 + amount.0),
+            );
         }
         promise_success
     }
 
+    pub fn after_ft_transfer_deposit(
+        &mut self,
+        account_id: AccountId,
+        amount: WrappedBalance,
+        token_account_id: TokenAccountId
+    ) -> bool {
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Callback can only be called from the contract"
+        );
+
+        let promise_success = is_promise_success();
+        if !is_promise_success() {
+            log!(
+                "Token {} withdraw for user {} failed. Amount to recharge: {}",
+                token_account_id,
+                account_id,
+                amount.0
+            );
+
+            let current_deposit = self.get_deposit(account_id.clone(), Some(token_account_id.clone()));
+
+            self.deposits.insert(
+                &TokenByNearAccount {
+                    account_id,
+                    token_account_id,
+                },
+                &(current_deposit.0 + amount.0),
+            );
+        }
+        promise_success
+    }
 
     #[payable]
     // decentralized tips withdraw for those who made near auth. telegram_account is numeric ID 123123123
     pub fn withdraw_from_telegram_with_auth(&mut self,
                                             telegram_account: TelegramAccountId,
-                                            token_id: Option<TokenAccountId>) -> Promise { // TODO FT ft_on_transfer
+                                            token_id: Option<TokenAccountId>) -> Promise {
         assert!(self.withdraw_available, "Withdrawals paused");
 
         let account_id = env::predecessor_account_id();
@@ -557,7 +612,7 @@ impl NearTips {
             account_id: Some(telegram_account),
         };
 
-        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
+        self.get_contact_owner(contact.clone(), AUTH_ACCOUNT_ID.to_string()).
             then(ext_self::on_get_contact_owner_on_withdraw_from_telegram_with_auth(
                 account_id,
                 contact,
@@ -601,7 +656,33 @@ impl NearTips {
                 env::log(format!("@{} withdrew {} of {:?} from telegram account {}",
                                  predecessor_account_id, balance, token_id_unwrapped, telegram_account).as_bytes());
 
-                Promise::new(recipient_account_id).transfer(balance)
+                //Promise::new(recipient_account_id).transfer(balance)
+
+                if token_id_unwrapped == NEAR {
+                    Promise::new(recipient_account_id).transfer(balance)
+                } else {
+                    ext_fungible_token::ft_transfer(
+                        recipient_account_id.clone(),
+                        balance.into(),
+                        Some(format!(
+                            "Claiming tips: {} of {:?} from @{}",
+                            balance,
+                            token_id_unwrapped,
+                            env::current_account_id()
+                        )),
+                        &token_id_unwrapped,
+                        ONE_YOCTO,
+                        GAS_FOR_FT_TRANSFER,
+                    )
+                        .then(ext_self::after_ft_transfer_balance(
+                            telegram_account,
+                            balance.into(),
+                            token_id_unwrapped,
+                            &env::current_account_id(),
+                            NO_DEPOSIT,
+                            GAS_FOR_AFTER_FT_TRANSFER,
+                        ))
+                }
             }
             None => {
                 panic!("Contact wasn't authorized to any account");
@@ -628,9 +709,33 @@ impl NearTips {
             },
             &0);
 
-        env::log(format!("@{} withdrew {} of {:?} from internal deposit", account_id, deposit, token_id_unwrapped).as_bytes());
+        env::log(format!("@{} withdrew {} of {:?} from internal deposit", account_id.clone(), deposit, token_id_unwrapped).as_bytes());
 
-        Promise::new(account_id.clone()).transfer(deposit)
+        if token_id_unwrapped == NEAR {
+            Promise::new(account_id).transfer(deposit)
+        } else {
+            ext_fungible_token::ft_transfer(
+                account_id.clone(),
+                deposit.into(),
+                Some(format!(
+                    "Claiming tips: {} of {:?} from @{}",
+                    deposit,
+                    token_id_unwrapped,
+                    env::current_account_id()
+                )),
+                &token_id_unwrapped,
+                ONE_YOCTO,
+                GAS_FOR_FT_TRANSFER,
+            )
+                .then(ext_self::after_ft_transfer_deposit(
+                    account_id,
+                    deposit.into(),
+                    token_id_unwrapped,
+                    &env::current_account_id(),
+                    NO_DEPOSIT,
+                    GAS_FOR_AFTER_FT_TRANSFER,
+                ))
+        }
     }
 
     pub fn withdraw_linkdrop(&mut self, public_key: String, telegram_account: TelegramAccountId) -> Promise {
@@ -653,7 +758,7 @@ impl NearTips {
         env::log(format!("Telegram account {} withdrew {} yNEAR with linkDrop for public key {}. Withdraw commission: {} yNEAR",
                          telegram_account, amount, public_key, WITHDRAW_COMMISSION).as_bytes());
 
-        linkdrop::send(public_key.clone(), &NearTips::get_linkdrop_contract(), amount, BASE_GAS)
+        linkdrop::send(public_key.clone(), &LINKDROP_ACCOUNT_ID.to_string(), amount, BASE_GAS)
     }
 
     pub fn get_contact_owner(&self, contact: Contact, contract_address: AccountId) -> Promise {
@@ -686,7 +791,7 @@ impl NearTips {
             deposit, amount.0
         );
 
-        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
+        self.get_contact_owner(contact.clone(), AUTH_ACCOUNT_ID.to_string()).
             then(ext_self::on_get_contact_owner_on_tip_contact_to_deposit(
                 account_id,
                 contact,
@@ -742,7 +847,7 @@ impl NearTips {
 
         let account_id = env::predecessor_account_id();
 
-        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract()).
+        self.get_contact_owner(contact.clone(), AUTH_ACCOUNT_ID.to_string()).
             then(ext_self::on_get_contact_owner_on_tip_contact_with_attached_tokens(
                 account_id,
                 contact,
@@ -876,7 +981,7 @@ impl NearTips {
     fn withdraw_tip_for_undefined_account(&self, contact: Contact, balance_to_withdraw: Balance) -> Promise {
         let account_id = env::predecessor_account_id();
 
-        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract())
+        self.get_contact_owner(contact.clone(), AUTH_ACCOUNT_ID.to_string())
             .then(ext_self::on_get_contact_owner_on_withdraw_tip_for_undefined_account(
                 account_id,
                 contact,
@@ -901,7 +1006,6 @@ impl NearTips {
 
         assert!(!account.is_none(), "Owner not found");
         let contact_owner_account_id: AccountId = account.unwrap();
-        let undefined_account_id = NearTips::get_undefined_account();
 
         assert_eq!(
             contact_owner_account_id,
@@ -913,7 +1017,7 @@ impl NearTips {
         Promise::new(recipient_account_id)
             .transfer(balance_to_withdraw)
             .then(ext_self::on_withdraw_tip(
-                undefined_account_id,
+                UNDEFINED_ACCOUNT_ID.to_string(),
                 recipient_contact,
                 balance_to_withdraw,
                 &env::current_account_id(),
@@ -925,7 +1029,7 @@ impl NearTips {
     fn withdraw_tip_for_current_account(&self, contact: Contact, balance_to_withdraw: Balance) -> Promise {
         let account_id = env::predecessor_account_id();
 
-        auth::get_contacts(account_id.clone(), &NearTips::get_auth_contract(), NO_DEPOSIT, BASE_GAS)
+        auth::get_contacts(account_id.clone(), &AUTH_ACCOUNT_ID.to_string(), NO_DEPOSIT, BASE_GAS)
             .then(ext_self::on_get_contacts_on_withdraw_tip_for_current_account(
                 account_id,
                 contact,
@@ -950,7 +1054,7 @@ impl NearTips {
         match contacts {
             Some(contacts) => {
                 for contact in &contacts {
-                    env::log(format!("Check:  [{:?} account {:?}]", contact.category, contact.value).as_bytes());
+                    env::log(format!("Check: [{:?} account {:?}]", contact.category, contact.value).as_bytes());
                     if NearTips::are_contacts_equal(contact.clone(), recipient_contact.clone()) {
                         Promise::new(recipient_account_id.clone())
                             .transfer(balance)
@@ -986,8 +1090,7 @@ impl NearTips {
         let balance_of_account: Balance = NearTips::get_tip_by_contact(self, account_id.clone(), contact.clone()).0;
 
         // check tips sent exactly to contacts belongs to undefined account
-        let undefined_account_id = NearTips::get_undefined_account();
-        let balance_of_undefined_account: Balance = NearTips::get_tip_by_contact(self, undefined_account_id, contact.clone()).0;
+        let balance_of_undefined_account: Balance = NearTips::get_tip_by_contact(self, UNDEFINED_ACCOUNT_ID.to_string(), contact.clone()).0;
 
         env::log(format!("balance_of_account  {} found", balance_of_account).as_bytes());
         env::log(format!("balance_of_undefined_account  {} found", balance_of_undefined_account).as_bytes());
@@ -1100,6 +1203,15 @@ impl NearTips {
 
     pub fn get_tip_available(self) -> bool {
         self.tip_available
+    }
+
+    pub fn set_generic_tips_available(&mut self, generic_tips_available: bool) {
+        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        self.generic_tips_available = generic_tips_available;
+    }
+
+    pub fn get_generic_tips_available(self) -> bool {
+        self.generic_tips_available
     }
 
     pub fn transfer_tips_to_deposit(&mut self, telegram_account: TelegramAccountId,
@@ -1225,13 +1337,13 @@ impl NearTips {
 
         let near_account_id: TokenAccountId = NEAR.to_string();
         let mut telegram_tips_new =
-            if iteration == 1 {
+            if iteration == 0 {
                 LookupMap::new(StorageKey::TelegramTipsLookupMap)
             } else {
                 old_contract.telegram_tips
             };
         let mut telegram_tips_v1 = old_contract.telegram_tips_v1.clone();
-        let mut x = 0;
+        let mut x: u32 = 1;
 
         for (telegram_account, amount) in &old_contract.telegram_tips_v1 {
             let telegram_id = telegram_account.parse::<u64>().unwrap_or(0);
@@ -1245,11 +1357,8 @@ impl NearTips {
 
                 telegram_tips_v1.remove(telegram_account);
 
-                if iteration == 0 && x > 300 {
+                if x >= 250 {
                     break;
-                }
-                if iteration == 1 && x < 300 {
-                    continue;
                 }
 
                 x += 1;
@@ -1257,6 +1366,9 @@ impl NearTips {
                 env::log(format!("Invalid telegram_account {}", telegram_account).as_bytes());
             }
         }
+
+        env::log(format!("Pending items: {}", telegram_tips_v1.len()).as_bytes());
+
 
         Self {
             deposits: old_contract.deposits,
@@ -1274,69 +1386,6 @@ impl NearTips {
         }
     }
 
-    #[init(ignore_state)]
-    #[allow(dead_code)]
-    pub fn migrate_state_3_3() -> Self { // add telegram_users_in_chats, Migration to
-        let migration_version: u16 = 3;
-        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Private function");
-
-        #[derive(BorshDeserialize)]
-        struct OldContract {
-            deposits: LookupMap<TokenByNearAccount, Balance>,
-            telegram_tips: LookupMap<TokenByTelegramAccount, Balance>,
-            tips: LookupMap<AccountId, Vec<Tip>>,
-            telegram_users_in_chats: LookupSet<TelegramUserInChat>,
-            chat_points: LookupMap<TelegramChatId, RewardPoint>,
-            whitelisted_tokens: LookupSet<TokenAccountId>,
-            version: u16,
-            withdraw_available: bool,
-            tip_available: bool,
-            generic_tips_available: bool,
-
-            telegram_tips_v1: HashMap<String, Balance>,
-        }
-
-        let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
-
-        let near_account_id: TokenAccountId = NEAR.to_string();
-        let mut telegram_tips_new = LookupMap::new(StorageKey::TelegramTipsLookupMap);
-        let mut x = 0;
-
-        for (telegram_account, amount) in &old_contract.telegram_tips_v1 {
-            let telegram_id = telegram_account.parse::<u64>().unwrap_or(0);
-            if telegram_id > 0 {
-                telegram_tips_new.insert(
-                    &TokenByTelegramAccount {
-                        telegram_account: telegram_id,
-                        token_account_id: near_account_id.clone(),
-                    },
-                    amount);
-
-                x += 1;
-                if x > 330 {
-                    break;
-                }
-            } else {
-                env::log(format!("Invalid telegram_account {}", telegram_account).as_bytes());
-            }
-        }
-
-        Self {
-            deposits: old_contract.deposits,
-            telegram_tips: telegram_tips_new,
-            tips: old_contract.tips,
-            telegram_users_in_chats: old_contract.telegram_users_in_chats,
-            chat_points: old_contract.chat_points,
-            whitelisted_tokens: old_contract.whitelisted_tokens,
-            version: migration_version,
-            withdraw_available: old_contract.withdraw_available,
-            tip_available: old_contract.tip_available,
-            generic_tips_available: old_contract.generic_tips_available,
-
-            telegram_tips_v1: HashMap::new(),
-        }
-    }
-
     #[allow(unused_variables)]
     pub fn ft_on_transfer(
         &mut self,
@@ -1349,7 +1398,7 @@ impl NearTips {
 
         self.deposit_amount_to_account(sender_id, amount.0, token_account_id);
 
-        PromiseOrValue::Value(0.into()) // TODO do we need it?
+        PromiseOrValue::Value(0.into())
     }
 }
 

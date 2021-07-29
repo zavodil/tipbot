@@ -22,7 +22,7 @@ const admin_commission = 0.003;
 
 const near = new contract(process.env.REACT_CONTRACT_ID);
 
-const MAX_TOKENS_TO_TIP = 1;
+const MAX_TOKENS_TO_TIP = 20;
 
 describe("Contract set", () => {
     test("Contract is not null " + process.env.REACT_CONTRACT_ID, async () => {
