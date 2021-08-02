@@ -79,6 +79,7 @@ pub struct NearTips {
     telegram_tips_v1: HashMap<String, Balance>,
 
     total_chat_points: RewardPoint,
+    chat_settings: LookupMap<TelegramChatId, ChatSettings>,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
@@ -127,6 +128,13 @@ pub struct TelegramUserInChat {
     pub chat_id: TelegramChatId, // chat_id is negative, so don't forget * -1
 }
 
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
+#[serde(crate = "near_sdk::serde")]
+pub struct ChatSettings {
+    pub admin_account_id: AccountId,
+    pub treasure_fee_numerator: TreasureFeeNumerator
+}
+
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Eq, PartialEq, Clone)]
 #[serde(crate = "near_sdk::serde")]
 pub struct ContactVer1 {
@@ -168,6 +176,7 @@ pub trait ExtNearTips {
     fn after_ft_transfer_balance(&mut self, telegram_account: TelegramAccountId, amount: WrappedBalance, token_account_id: TokenAccountId) -> bool;
     fn after_ft_transfer_deposit(&mut self, account_id: AccountId, amount: WrappedBalance, token_account_id: TokenAccountId) -> bool;
     fn after_ft_transfer_to_treasure(&mut self, chat_id: TelegramChatId, treasure_fee: WrappedBalance, token_account_id: TokenAccountId) -> bool;
+    fn after_ft_transfer_claim_by_chat(&mut self, chat_id: TelegramChatId, amount_claimed: WrappedBalance, token_account_id: TokenAccountId) -> bool;
 }
 
 fn is_promise_success() -> bool {
@@ -194,6 +203,7 @@ pub enum StorageKey {
     TelegramUsersInChats,
     WhitelistedTokensLookupSet,
     ChatPointsLookupMapU128,
+    ChatSettingsLookupMap
 }
 
 #[near_bindgen]
@@ -213,6 +223,7 @@ impl NearTips {
             generic_tips_available: false,
             telegram_tips_v1: HashMap::new(),
             total_chat_points: 0,
+            chat_settings: LookupMap::new(StorageKey::ChatSettingsLookupMap),
         }
     }
 
@@ -309,9 +320,92 @@ impl NearTips {
             .collect()
     }
 
-    pub fn claim_chat_points(&mut self) {
-        // TODO
+    pub fn get_chat_settings(&self, telegram_chat: TelegramChatId) -> Option<ChatSettings> {
+        self.chat_settings.get(&telegram_chat)
     }
+
+    pub fn claim_chat_tokens(&mut self, telegram_chat: TelegramChatId, token_id: Option<TokenAccountId>)  {
+        let settings = self.get_chat_settings(telegram_chat);
+
+        assert!(settings.is_some(), "Unknown chat");
+        let account_id = env::predecessor_account_id();
+        let admin_account_id: AccountId = settings.unwrap().admin_account_id;
+        assert_eq!(admin_account_id, account_id, "Current user is not a chat admin");
+
+        let token_id_unwrapped = NearTips::unwrap_token_id(token_id.clone());
+        assert_eq!(token_id_unwrapped, "point".to_string(), "Claim tokens using this method");
+        
+        let chat_balance: RewardPoint = self.get_chat_score(telegram_chat, token_id).0;
+        assert!(chat_balance > 0, "Nothing to claim");
+        
+        let points_by_chat = TokenByTelegramChat {
+            telegram_chat: telegram_chat,
+            token_account_id: token_id_unwrapped.clone(),
+        };
+        self.chat_points.insert(&points_by_chat, &0);
+        
+        if token_id_unwrapped == NEAR {
+            Promise::new(account_id.to_string()).transfer(chat_balance);
+        } else {
+            ext_fungible_token::ft_transfer(
+                account_id.to_string(),
+                chat_balance.into(),
+                Some(format!(
+                    "Claimed by {} on behalf of chat {}: {} of {:?}",
+                    account_id,
+                    chat_balance,
+                    telegram_chat,
+                    token_id_unwrapped
+                )),
+                &token_id_unwrapped,
+                ONE_YOCTO,
+                GAS_FOR_FT_TRANSFER,
+            )
+                .then(ext_self::after_ft_transfer_to_treasure(
+                    telegram_chat,
+                    chat_balance.into(),
+                    token_id_unwrapped.clone(),
+                    &env::current_account_id(),
+                    NO_DEPOSIT,
+                    GAS_FOR_AFTER_FT_TRANSFER,
+                ));
+        }
+
+    }
+
+    pub fn after_ft_transfer_claim_by_chat(
+        &mut self,
+        chat_id: TelegramChatId,
+        amount_claimed: WrappedBalance,
+        token_account_id: TokenAccountId,
+    ) -> bool {
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Callback can only be called from the contract"
+        );
+
+        let promise_success = is_promise_success();
+        if !is_promise_success() {
+            log!(
+                "FT claim of {} on behalf of chat {} failed. Points to recharge: {}",
+                token_account_id,
+                chat_id,
+                amount_claimed.0
+            );
+
+            let token_by_chat = TokenByTelegramChat {
+                telegram_chat: chat_id,
+                token_account_id,
+            };
+
+            let chat_score: RewardPoint = self.chat_points.get(&token_by_chat).unwrap_or(0);
+
+            self.chat_points.insert(&token_by_chat, &(chat_score + amount_claimed.0));
+        }
+        promise_success
+    }
+
 
     pub fn get_chat_score(&self, chat_id: TelegramChatId, token_id: Option<TokenAccountId>) -> WrappedBalance {
         let token_account_id = NearTips::unwrap_token_id(token_id);
@@ -1545,14 +1639,12 @@ impl NearTips {
 
         let old_contract: OldContract = env::state_read().expect("Old state doesn't exist");
 
-        let chat_points_new = LookupMap::new(StorageKey::ChatPointsLookupMapU128);
-
         Self {
             deposits: old_contract.deposits,
             telegram_tips: old_contract.telegram_tips,
             tips: old_contract.tips,
             telegram_users_in_chats: old_contract.telegram_users_in_chats,
-            chat_points: chat_points_new,
+            chat_points: LookupMap::new(StorageKey::ChatPointsLookupMapU128),
             whitelisted_tokens: old_contract.whitelisted_tokens,
             version: migration_version,
             withdraw_available: old_contract.withdraw_available,
@@ -1561,6 +1653,7 @@ impl NearTips {
 
             telegram_tips_v1: old_contract.telegram_tips_v1,
             total_chat_points: 0,
+            chat_settings: LookupMap::new(StorageKey::ChatSettingsLookupMap)
         }
     }
 
@@ -1580,7 +1673,7 @@ impl NearTips {
     }
 }
 
-
+/*
 #[cfg(test)]
 mod tests {
     // outdated. use jest simulation tests instead.
@@ -1755,3 +1848,4 @@ mod tests {
         );
     }
 }
+*/
