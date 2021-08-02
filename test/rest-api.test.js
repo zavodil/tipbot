@@ -16,6 +16,7 @@ const carol_contact = "";
 const carol_contact_id = 9876543210;
 
 const chat_id = 9999;
+const chat_admin = bob;
 
 const tipbot_account_id = process.env.REACT_CONTRACT_ID;
 const ft_contract_account_id = "token.zavodil.testnet";
@@ -210,7 +211,10 @@ describe("Tip with referral chat_id", () => {
         await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
         await near.call("deposit", {}, {account_id: bob, tokens: utils.ConvertToNear(deposit_size)});
 
-        const chat_score_1 = await near.viewNearBalance("get_chat_score", {chat_id: alice_chat_id, token_id: token_point});
+        const chat_score_1 = await near.viewNearBalance("get_chat_score", {
+            chat_id: alice_chat_id,
+            token_id: token_point
+        });
         expect(chat_score_1).toBe(0);
 
         const send_tip_to_telegram_1 = await near.call("send_tip_to_telegram", {
@@ -378,7 +382,9 @@ const ft = new contract(ft_contract_account_id);
 near create-account token.zavodil.testnet --masterAccount=zavodil.testnet --initialBalance=3
 near deploy token.zavodil.testnet /var/www/html/nearspace.info/apps/fungible_token.wasm new '{"owner_id": "zavodil.testnet", "total_supply": "1000000000000000000000000", "metadata": {"spec": "ft-1.0.0", "name": "Zavodil Token", "symbol": "ZAV", "decimals": 18}}'
 
-near call token.zavodil.testnet storage_deposit '{}' --accountId dev-1627496984237-61970550418467 --deposit 0.2
+near call token.zavodil.testnet storage_deposit '{}' --accountId dev-1627929046372-37713905244524 --deposit 0.2
+near call dev-1627929046372-37713905244524 whitelist_token '{"token_id": "near"}' --accountId zavodil.testnet
+
 
 Transfer
 near call token.zavodil.testnet storage_deposit '{}' --accountId grant.testnet --deposit 0.1
@@ -622,6 +628,57 @@ describe("Chat Points", () => {
         const treasure_ft_balance_3 = await ft.viewDaiBalance("ft_balance_of", {account_id: treasure_account_id});
         expect(utils.RoundFloat(treasure_ft_balance_3 - treasure_ft_balance_2)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size * treasure_fee_numerator_2 / 100), 3);
     });
+
+    test("Add chat settings", async () => {
+        const treasure_fee_numerator = 1;
+        const add_chat_settings = await near.call("add_chat_settings", {
+            chat_id: chat_id,
+            admin_account_id: chat_admin,
+            treasure_fee_numerator: treasure_fee_numerator
+        }, {account_id: admin});
+        expect(add_chat_settings.type).not.toBe('FunctionCallError');
+
+        const deposit = await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
+        expect(deposit.type).not.toBe('FunctionCallError');
+
+        let send_near = await near.call("send_tip_to_telegram", {
+            telegram_account: bob_contact_id,
+            amount: ft_tip_size,
+            chat_id: chat_id,
+            treasure_fee_numerator: treasure_fee_numerator
+        }, {
+            account_id: alice
+        });
+        expect(send_near.type).not.toBe('FunctionCallError');
+
+        const chat_settings = await near.view("get_chat_settings", {chat_id: chat_id});
+        expect(chat_settings.admin_account_id).toBe(bob);
+
+        const admin_deposit_1 = await near.accountNearBalance(chat_admin);
+        const chat_score_1 = await near.viewNearBalance("get_chat_score", {chat_id: chat_id});
+
+        let claim_chat_tokens_1 = await near.call("claim_chat_tokens", {
+            chat_id: chat_id
+        }, {
+            account_id: chat_admin
+        });
+        expect(claim_chat_tokens_1.type).not.toBe('FunctionCallError');
+
+        const admin_deposit_2 = await near.accountNearBalance(chat_admin);
+        const chat_score_2 = await near.viewNearBalance("get_chat_score", {chat_id: chat_id});
+        expect(utils.RoundFloat(admin_deposit_2 - admin_deposit_1)).toBeCloseTo(chat_score_1, 1);
+        expect(utils.RoundFloat(chat_score_2)).toBe(0);
+
+
+        let claim_chat_tokens_2_no_funds = await near.call("claim_chat_tokens", {
+            chat_id: chat_id
+        }, {
+            account_id: chat_admin
+        });
+        expect(claim_chat_tokens_2_no_funds.type).toBe('FunctionCallError');
+        expect(claim_chat_tokens_2_no_funds.kind.ExecutionError).toMatch(/(Nothing to claim)/i);
+    });
+
 });
 
 const auth = new contract("dev-1625611642901-32969379055293");

@@ -118,7 +118,7 @@ pub struct TokenByTelegramAccount {
 
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct TokenByTelegramChat {
-    pub telegram_chat: TelegramChatId,
+    pub chat_id: TelegramChatId,
     pub token_account_id: TokenAccountId,
 }
 
@@ -132,7 +132,7 @@ pub struct TelegramUserInChat {
 #[serde(crate = "near_sdk::serde")]
 pub struct ChatSettings {
     pub admin_account_id: AccountId,
-    pub treasure_fee_numerator: TreasureFeeNumerator
+    pub treasure_fee_numerator: TreasureFeeNumerator,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Eq, PartialEq, Clone)]
@@ -203,7 +203,7 @@ pub enum StorageKey {
     TelegramUsersInChats,
     WhitelistedTokensLookupSet,
     ChatPointsLookupMapU128,
-    ChatSettingsLookupMap
+    ChatSettingsLookupMap,
 }
 
 #[near_bindgen]
@@ -320,12 +320,26 @@ impl NearTips {
             .collect()
     }
 
-    pub fn get_chat_settings(&self, telegram_chat: TelegramChatId) -> Option<ChatSettings> {
-        self.chat_settings.get(&telegram_chat)
+    pub fn get_chat_settings(&self, chat_id: TelegramChatId) -> Option<ChatSettings> {
+        self.chat_settings.get(&chat_id)
     }
 
-    pub fn claim_chat_tokens(&mut self, telegram_chat: TelegramChatId, token_id: Option<TokenAccountId>)  {
-        let settings = self.get_chat_settings(telegram_chat);
+    pub fn add_chat_settings(&mut self, chat_id: TelegramChatId, admin_account_id: ValidAccountId, treasure_fee_numerator: TreasureFeeNumerator) {
+        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+
+        self.chat_settings.insert(&chat_id, &ChatSettings {
+            admin_account_id: admin_account_id.into(),
+            treasure_fee_numerator,
+        });
+    }
+
+    pub fn delete_chat_settings(&mut self, chat_id: TelegramChatId) {
+        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        self.chat_settings.remove(&chat_id);
+    }
+
+    pub fn claim_chat_tokens(&mut self, chat_id: TelegramChatId, token_id: Option<TokenAccountId>) {
+        let settings = self.get_chat_settings(chat_id);
 
         assert!(settings.is_some(), "Unknown chat");
         let account_id = env::predecessor_account_id();
@@ -333,17 +347,17 @@ impl NearTips {
         assert_eq!(admin_account_id, account_id, "Current user is not a chat admin");
 
         let token_id_unwrapped = NearTips::unwrap_token_id(token_id.clone());
-        assert_eq!(token_id_unwrapped, "point".to_string(), "Claim tokens using this method");
-        
-        let chat_balance: RewardPoint = self.get_chat_score(telegram_chat, token_id).0;
+        assert!(token_id_unwrapped != "point".to_string(), "Claim tokens using this method");
+
+        let chat_balance: RewardPoint = self.get_chat_score(chat_id, token_id).0;
         assert!(chat_balance > 0, "Nothing to claim");
-        
+
         let points_by_chat = TokenByTelegramChat {
-            telegram_chat: telegram_chat,
+            chat_id,
             token_account_id: token_id_unwrapped.clone(),
         };
         self.chat_points.insert(&points_by_chat, &0);
-        
+
         if token_id_unwrapped == NEAR {
             Promise::new(account_id.to_string()).transfer(chat_balance);
         } else {
@@ -354,7 +368,7 @@ impl NearTips {
                     "Claimed by {} on behalf of chat {}: {} of {:?}",
                     account_id,
                     chat_balance,
-                    telegram_chat,
+                    chat_id,
                     token_id_unwrapped
                 )),
                 &token_id_unwrapped,
@@ -362,7 +376,7 @@ impl NearTips {
                 GAS_FOR_FT_TRANSFER,
             )
                 .then(ext_self::after_ft_transfer_to_treasure(
-                    telegram_chat,
+                    chat_id,
                     chat_balance.into(),
                     token_id_unwrapped.clone(),
                     &env::current_account_id(),
@@ -370,7 +384,6 @@ impl NearTips {
                     GAS_FOR_AFTER_FT_TRANSFER,
                 ));
         }
-
     }
 
     pub fn after_ft_transfer_claim_by_chat(
@@ -395,7 +408,7 @@ impl NearTips {
             );
 
             let token_by_chat = TokenByTelegramChat {
-                telegram_chat: chat_id,
+                chat_id,
                 token_account_id,
             };
 
@@ -410,7 +423,7 @@ impl NearTips {
     pub fn get_chat_score(&self, chat_id: TelegramChatId, token_id: Option<TokenAccountId>) -> WrappedBalance {
         let token_account_id = NearTips::unwrap_token_id(token_id);
         self.chat_points.get(&TokenByTelegramChat {
-            telegram_chat: chat_id,
+            chat_id,
             token_account_id,
         }).unwrap_or(0).into()
     }
@@ -489,7 +502,7 @@ impl NearTips {
 
             if amount.0 > MIN_AMOUNT_TO_REWARD_CHAT {
                 let points_by_chat = TokenByTelegramChat {
-                    telegram_chat: chat_id_unwrapped,
+                    chat_id: chat_id_unwrapped,
                     token_account_id: "point".to_string(),
                 };
 
@@ -510,7 +523,7 @@ impl NearTips {
                 let reward_score = treasure_fee;
                 if reward_score > 0 {
                     let token_by_chat = TokenByTelegramChat {
-                        telegram_chat: chat_id_unwrapped,
+                        chat_id: chat_id_unwrapped,
                         token_account_id: token_id_unwrapped.clone(),
                     };
 
@@ -577,7 +590,7 @@ impl NearTips {
             );
 
             let token_by_chat = TokenByTelegramChat {
-                telegram_chat: chat_id,
+                chat_id,
                 token_account_id,
             };
 
@@ -683,7 +696,7 @@ impl NearTips {
         }
     }
 
-    pub fn is_whitelisted_tokens(&self, token_id: TokenAccountId) -> bool {
+    pub fn is_whitelisted_token(&self, token_id: TokenAccountId) -> bool {
         self.whitelisted_tokens.contains(&token_id)
     }
 
@@ -1653,7 +1666,7 @@ impl NearTips {
 
             telegram_tips_v1: old_contract.telegram_tips_v1,
             total_chat_points: 0,
-            chat_settings: LookupMap::new(StorageKey::ChatSettingsLookupMap)
+            chat_settings: LookupMap::new(StorageKey::ChatSettingsLookupMap),
         }
     }
 
