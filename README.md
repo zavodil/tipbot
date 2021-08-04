@@ -11,7 +11,7 @@ This [React] app was initialized with [create-near-app]
 
 
 Quick Start
-===========
+=========== 
 
 To run this project locally:
 

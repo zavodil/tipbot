@@ -375,7 +375,7 @@ impl NearTips {
                 ONE_YOCTO,
                 GAS_FOR_FT_TRANSFER,
             )
-                .then(ext_self::after_ft_transfer_to_treasure(
+                .then(ext_self::after_ft_transfer_claim_by_chat(
                     chat_id,
                     chat_balance.into(),
                     token_id_unwrapped.clone(),
