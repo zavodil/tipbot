@@ -5,11 +5,11 @@ use near_sdk::{env, near_bindgen, AccountId, Balance, Promise, Gas, ext_contract
 use near_sdk::json_types::{ValidAccountId, U128};
 use near_sdk::collections::{LookupSet, LookupMap};
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::TryFrom;  
 use near_contract_standards::fungible_token::core_impl::ext_fungible_token;
 
 pub type WrappedBalance = U128;
-pub type TelegramAccountId = u64;
+pub type TelegramAccountId = u64; // id may potentially overflow the u64 limit 
 pub type TelegramChatId = u64;
 pub type RewardPoint = u128;
 pub type TokenAccountId = AccountId;
@@ -26,7 +26,7 @@ const TREASURE_ACCOUNT_ID: &str =
 const MASTER_ACCOUNT_ID: &str = "zavodil.testnet";
 const LINKDROP_ACCOUNT_ID: &str = "linkdrop.zavodil.testnet";
 const AUTH_ACCOUNT_ID: &str = "dev-1625611642901-32969379055293";
-const TREASURE_ACCOUNT_ID: &str = "treasure.zavodil.testnet";
+// const TREASURE_ACCOUNT_ID: &str = "treasure.zavodil.testnet";
 
 const UNDEFINED_ACCOUNT_ID: &str = "";
 
@@ -47,6 +47,10 @@ const NO_DEPOSIT: Balance = 0;
 const ONE_YOCTO: Balance = 1;
 const NEAR: &str = "near";
 
+uint::construct_uint! {
+    pub struct U256(4);
+}
+
 #[ext_contract(linkdrop)]
 pub trait ExtLinkdrop {
     fn send(&self, public_key: String);
@@ -66,7 +70,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 pub struct NearTips {
     deposits: LookupMap<TokenByNearAccount, Balance>,
     telegram_tips: LookupMap<TokenByTelegramAccount, Balance>,
-    tips: LookupMap<AccountId, Vec<Tip>>,
+    tips: LookupMap<AccountId, Vec<Tip>>, // should be removed, bad approach
     telegram_users_in_chats: LookupSet<TelegramUserInChat>,
     chat_points: LookupMap<TokenByTelegramChat, RewardPoint>,
     whitelisted_tokens: LookupSet<TokenAccountId>,
@@ -78,8 +82,9 @@ pub struct NearTips {
     // empty, used for migration
     telegram_tips_v1: HashMap<String, Balance>,
 
-    total_chat_points: RewardPoint,
+    total_chat_points: RewardPoint, // not used, TODO for each token?
     chat_settings: LookupMap<TelegramChatId, ChatSettings>,
+    treasure: LookupMap<TokenAccountId, Balance>
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
@@ -204,6 +209,7 @@ pub enum StorageKey {
     WhitelistedTokensLookupSet,
     ChatPointsLookupMapU128,
     ChatSettingsLookupMap,
+    TreasureLookupMap
 }
 
 #[near_bindgen]
@@ -224,31 +230,27 @@ impl NearTips {
             telegram_tips_v1: HashMap::new(),
             total_chat_points: 0,
             chat_settings: LookupMap::new(StorageKey::ChatSettingsLookupMap),
+            treasure: LookupMap::new(StorageKey::TreasureLookupMap),
         }
     }
 
     /* INITIAL FUNCTIONS, using telegram_tips object */
 
     #[payable]
-    pub fn deposit(&mut self) {
-        assert!(self.withdraw_available, "Deposits/Withdrawals paused");
+    pub fn deposit(&mut self, account_id: Option<ValidAccountId> ) {
+        self.assert_withdraw_available();
 
-        let account_id: ValidAccountId = ValidAccountId::try_from(env::predecessor_account_id()).unwrap();
+        let account_id_prepared: ValidAccountId = account_id.unwrap_or(
+            ValidAccountId::try_from(env::predecessor_account_id()).unwrap()
+        );
         let attached_deposit: Balance = env::attached_deposit();
 
-        self.deposit_amount_to_account(account_id, attached_deposit, Some(NEAR.to_string()));
+        self.deposit_amount_to_account(account_id_prepared.as_ref(), attached_deposit, Some(NEAR.to_string()));
     }
 
-    #[payable]
-    pub fn deposit_to_account(&mut self, account_id: ValidAccountId) {
-        assert!(self.withdraw_available, "Deposits/Withdrawals paused");
-        let attached_deposit: Balance = env::attached_deposit();
-        self.deposit_amount_to_account(account_id, attached_deposit, Some(NEAR.to_string()));
-    }
-
-    pub(crate) fn deposit_amount_to_account(&mut self, account_id: ValidAccountId, amount: Balance, token_id: Option<TokenAccountId>) {
-        assert!(self.withdraw_available, "Deposits/Withdrawals paused");
-        let token_id_unwrapped = NearTips::unwrap_token_id(token_id.clone());
+    pub(crate) fn deposit_amount_to_account(&mut self, account_id: &AccountId, amount: Balance, token_id: Option<TokenAccountId>) {
+        self.assert_withdraw_available();
+        let token_id_unwrapped = NearTips::unwrap_token_id(&token_id);
 
         if token_id_unwrapped == NEAR {
             assert!(amount >= MIN_DEPOSIT_NEAR, "Minimum deposit is 0.1");
@@ -256,14 +258,14 @@ impl NearTips {
             assert!(amount >= MIN_DEPOSIT_FT, "Minimum deposit is 0.1");
         }
 
-        self.assert_check_whitelisted_token(token_id.clone());
+        self.assert_check_whitelisted_token(&token_id);
 
-        let account_id_prepared: AccountId = account_id.into();
+        let account_id_prepared : ValidAccountId = ValidAccountId::try_from(account_id.as_str()).unwrap();
         let deposit: Balance = self.get_deposit(account_id_prepared.clone(), token_id).0;
 
         self.deposits.insert(
             &TokenByNearAccount {
-                account_id: account_id_prepared.clone(),
+                account_id: account_id.clone(),
                 token_account_id: token_id_unwrapped.clone(),
             },
             &(deposit + amount),
@@ -272,16 +274,16 @@ impl NearTips {
         env::log(format!("@{} deposited {} of {:?}", account_id_prepared, amount, token_id_unwrapped).as_bytes());
     }
 
-    pub fn get_deposit(&self, account_id: AccountId, token_id: Option<TokenAccountId>) -> WrappedBalance {
+    pub fn get_deposit(&self, account_id: ValidAccountId, token_id: Option<TokenAccountId>) -> WrappedBalance {
         self.deposits.get(
             &TokenByNearAccount {
-                account_id,
-                token_account_id: NearTips::unwrap_token_id(token_id),
+                account_id: account_id.into(),
+                token_account_id: NearTips::unwrap_token_id(&token_id),
             }).unwrap_or(0).into()
     }
 
     pub fn get_deposits(&self,
-                        account_id: AccountId,
+                        account_id: ValidAccountId,
                         token_ids: Vec<TokenAccountId>,
     ) -> HashMap<TokenAccountId, WrappedBalance> {
         token_ids
@@ -301,7 +303,7 @@ impl NearTips {
         self.telegram_tips.get(
             &TokenByTelegramAccount {
                 telegram_account,
-                token_account_id: NearTips::unwrap_token_id(token_id),
+                token_account_id: NearTips::unwrap_token_id(&token_id),
             }
         ).unwrap_or(0).into()
     }
@@ -324,8 +326,23 @@ impl NearTips {
         self.chat_settings.get(&chat_id)
     }
 
+    pub fn get_chat_numerator(&self, chat_id: TelegramChatId) -> TreasureFeeNumerator {
+        let settings = self.get_chat_settings(chat_id);
+        if let Some(settings_unwrapped) = settings { 
+            settings_unwrapped.treasure_fee_numerator
+        }
+        else {
+            0
+        }
+    }
+
+    pub fn get_treasure_balance(&self, token_account_id: Option<TokenAccountId>) -> WrappedBalance {
+        let token_id_unwrapped = NearTips::unwrap_token_id(&token_account_id);
+        self.treasure.get(&token_id_unwrapped).unwrap_or(0).into()
+    }
+
     pub fn add_chat_settings(&mut self, chat_id: TelegramChatId, admin_account_id: ValidAccountId, treasure_fee_numerator: TreasureFeeNumerator) {
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        NearTips::assert_master_account_id();
 
         self.chat_settings.insert(&chat_id, &ChatSettings {
             admin_account_id: admin_account_id.into(),
@@ -334,23 +351,27 @@ impl NearTips {
     }
 
     pub fn delete_chat_settings(&mut self, chat_id: TelegramChatId) {
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        NearTips::assert_master_account_id();
         self.chat_settings.remove(&chat_id);
     }
 
-    pub fn claim_chat_tokens(&mut self, chat_id: TelegramChatId, token_id: Option<TokenAccountId>) {
+    pub fn claim_chat_tokens(&mut self, chat_id: TelegramChatId, token_id: Option<TokenAccountId>) -> Promise {
         let settings = self.get_chat_settings(chat_id);
-
         assert!(settings.is_some(), "Unknown chat");
+
         let account_id = env::predecessor_account_id();
         let admin_account_id: AccountId = settings.unwrap().admin_account_id;
         assert_eq!(admin_account_id, account_id, "Current user is not a chat admin");
 
-        let token_id_unwrapped = NearTips::unwrap_token_id(token_id.clone());
+        let token_id_unwrapped = NearTips::unwrap_token_id(&token_id);
         assert!(token_id_unwrapped != "point".to_string(), "Claim tokens using this method");
 
         let chat_balance: RewardPoint = self.get_chat_score(chat_id, token_id).0;
         assert!(chat_balance > 0, "Nothing to claim");
+
+        let treasure_balance: Balance = self.treasure.get(&token_id_unwrapped).unwrap_or(0);
+        assert!(treasure_balance >= chat_balance, "Not enough funds in treasure");
+        self.treasure.insert(&token_id_unwrapped, &(treasure_balance - chat_balance));
 
         let points_by_chat = TokenByTelegramChat {
             chat_id,
@@ -359,7 +380,7 @@ impl NearTips {
         self.chat_points.insert(&points_by_chat, &0);
 
         if token_id_unwrapped == NEAR {
-            Promise::new(account_id.to_string()).transfer(chat_balance);
+            Promise::new(account_id.to_string()).transfer(chat_balance)
         } else {
             ext_fungible_token::ft_transfer(
                 account_id.to_string(),
@@ -382,22 +403,17 @@ impl NearTips {
                     &env::current_account_id(),
                     NO_DEPOSIT,
                     GAS_FOR_AFTER_FT_TRANSFER,
-                ));
+                ))
         }
     }
 
+    #[private]
     pub fn after_ft_transfer_claim_by_chat(
         &mut self,
         chat_id: TelegramChatId,
         amount_claimed: WrappedBalance,
         token_account_id: TokenAccountId,
     ) -> bool {
-        assert_eq!(
-            env::predecessor_account_id(),
-            env::current_account_id(),
-            "Callback can only be called from the contract"
-        );
-
         let promise_success = is_promise_success();
         if !is_promise_success() {
             log!(
@@ -409,19 +425,21 @@ impl NearTips {
 
             let token_by_chat = TokenByTelegramChat {
                 chat_id,
-                token_account_id,
+                token_account_id: token_account_id.clone(),
             };
 
             let chat_score: RewardPoint = self.chat_points.get(&token_by_chat).unwrap_or(0);
-
             self.chat_points.insert(&token_by_chat, &(chat_score + amount_claimed.0));
+
+            let treasure_balance: Balance = self.treasure.get(&token_account_id).unwrap_or(0);
+            self.treasure.insert(&token_account_id, &(treasure_balance + amount_claimed.0));
         }
         promise_success
     }
 
 
     pub fn get_chat_score(&self, chat_id: TelegramChatId, token_id: Option<TokenAccountId>) -> WrappedBalance {
-        let token_account_id = NearTips::unwrap_token_id(token_id);
+        let token_account_id = NearTips::unwrap_token_id(&token_id);
         self.chat_points.get(&TokenByTelegramChat {
             chat_id,
             token_account_id,
@@ -445,8 +463,7 @@ impl NearTips {
     }
 
     pub fn multiply_treasure_fee_numerator(value: Balance, numerator: TreasureFeeNumerator) -> Balance {
-        //(U256::from(self.numerator) * U256::from(value) / U256::from(100)).as_u128() // why so so complicated?
-        numerator * value / 100
+        (U256::from(numerator) * U256::from(value) / U256::from(100)).as_u128() 
     }
 
 
@@ -455,13 +472,13 @@ impl NearTips {
                                                     telegram_account: TelegramAccountId,
                                                     amount: WrappedBalance,
                                                     chat_id: Option<TelegramChatId>,
-                                                    token_id: Option<TokenAccountId>,
-                                                    treasure_fee_numerator: Option<TreasureFeeNumerator>) {
-        assert!(self.tip_available, "Tips paused");
-        self.assert_check_whitelisted_token(token_id.clone());
+                                                    token_id: Option<TokenAccountId>) {
+        self.assert_tip_available();
+        self.assert_check_whitelisted_token(&token_id);
         assert!(amount.0 > 0, "Positive amount needed");
 
-        let deposit: Balance = NearTips::get_deposit(self, sender_account_id.clone(), token_id.clone()).0;
+        let sender_account_id_prepared = ValidAccountId::try_from(sender_account_id.clone()).unwrap();
+        let deposit: Balance = NearTips::get_deposit(self, sender_account_id_prepared, token_id.clone()).0;
 
         assert!(
             amount.0 <= deposit,
@@ -469,20 +486,66 @@ impl NearTips {
             deposit, amount.0
         );
 
-        let tip_amount: Balance;
-        let treasure_fee: Balance;
-        if treasure_fee_numerator.is_some() {
-            let treasure_fee_numerator_unwrapped = treasure_fee_numerator.unwrap();
-            NearTips::assert_valid_treasure_fee_numerator(treasure_fee_numerator_unwrapped);
-            treasure_fee = NearTips::multiply_treasure_fee_numerator(amount.0, treasure_fee_numerator_unwrapped);
-            tip_amount = amount.0 - treasure_fee;
+        let mut tip_amount: Balance = amount.0;
+        let token_id_unwrapped = NearTips::unwrap_token_id(&token_id);
+
+        // trasure fee & points
+        if let Some(chat_id_unwrapped) = chat_id {
+            if chat_id_unwrapped > 0 {
+                let treasure_fee_numerator = self.get_chat_numerator(chat_id_unwrapped);
+
+                if amount.0 > MIN_AMOUNT_TO_REWARD_CHAT {
+                    let points_by_chat = TokenByTelegramChat {
+                        chat_id: chat_id_unwrapped,
+                        token_account_id: "point".to_string(),
+                    };
+
+                    let user_in_chat: TelegramUserInChat = TelegramUserInChat {
+                        telegram_id: telegram_account,
+                        chat_id: chat_id_unwrapped,
+                    };
+
+                    if !self.telegram_users_in_chats.contains(&user_in_chat) {
+                        let chat_score: RewardPoint = self.chat_points.get(&points_by_chat).unwrap_or(0);
+                        let new_score = chat_score + 1;
+                        self.chat_points.insert(&points_by_chat, &new_score);
+                        self.telegram_users_in_chats.insert(&user_in_chat);
+                        env::log(format!("Reward point for chat {} added. Total: {}", chat_id_unwrapped, new_score).as_bytes());
+                    }
+                }
+
+                NearTips::assert_valid_treasure_fee_numerator(treasure_fee_numerator);
+                let treasure_fee = NearTips::multiply_treasure_fee_numerator(amount.0, treasure_fee_numerator);
+                tip_amount = amount.0 - treasure_fee; // overwrite tip amount
+
+                if treasure_fee > 0  {
+                    let token_by_chat = TokenByTelegramChat {
+                        chat_id: chat_id_unwrapped,
+                        token_account_id: token_id_unwrapped.clone(),
+                    };
+
+                    let chat_score: RewardPoint = self.chat_points.get(&token_by_chat).unwrap_or(0);
+                    let new_score = chat_score + treasure_fee;
+                    self.chat_points.insert(&token_by_chat, &new_score);
+
+                    let treasure_balance: Balance = self.treasure.get(&token_id_unwrapped).unwrap_or(0);
+                    self.treasure.insert(
+                        &token_id_unwrapped, 
+                        &(treasure_balance + treasure_fee)
+                    );    
+
+                    env::log(format!("@{} tipped {} of {:?} for telegram account {}. {} reward point(s) for chat {} added. Total: {}", sender_account_id, tip_amount, token_id_unwrapped, telegram_account, treasure_fee, chat_id_unwrapped, new_score).as_bytes());
+                } else {
+                    env::log(format!("@{} tipped {} of {:?} for telegram account {}. No reward point(s) added", sender_account_id, tip_amount, token_id_unwrapped, telegram_account).as_bytes());
+                }
+                
+            }
         } else {
-            tip_amount = amount.0;
-            treasure_fee = 0;
+            env::log(format!("@{} tipped {} of {:?} for telegram account {}", sender_account_id, tip_amount, token_id_unwrapped, telegram_account).as_bytes());
         }
 
+        // perform a tip
         let balance: Balance = NearTips::get_balance(self, telegram_account, token_id.clone()).0;
-        let token_id_unwrapped = NearTips::unwrap_token_id(token_id);
         self.telegram_tips.insert(
             &TokenByTelegramAccount {
                 telegram_account,
@@ -496,90 +559,15 @@ impl NearTips {
                                   token_account_id: token_id_unwrapped.clone(),
                               },
                               &(deposit - amount.0));
-
-        if chat_id.is_some() {
-            let chat_id_unwrapped = chat_id.unwrap();
-
-            if amount.0 > MIN_AMOUNT_TO_REWARD_CHAT {
-                let points_by_chat = TokenByTelegramChat {
-                    chat_id: chat_id_unwrapped,
-                    token_account_id: "point".to_string(),
-                };
-
-                let user_in_chat: TelegramUserInChat = TelegramUserInChat {
-                    telegram_id: telegram_account,
-                    chat_id: chat_id_unwrapped,
-                };
-
-                if !self.telegram_users_in_chats.contains(&user_in_chat) {
-                    let chat_score: RewardPoint = self.chat_points.get(&points_by_chat).unwrap_or(0);
-                    let new_score = chat_score + 1;
-                    self.chat_points.insert(&points_by_chat, &new_score);
-                    self.telegram_users_in_chats.insert(&user_in_chat);
-                    env::log(format!("Reward point for chat {} added. Total: {}", chat_id_unwrapped, new_score).as_bytes());
-                }
-            }
-            if treasure_fee > 0 {
-                let reward_score = treasure_fee;
-                if reward_score > 0 {
-                    let token_by_chat = TokenByTelegramChat {
-                        chat_id: chat_id_unwrapped,
-                        token_account_id: token_id_unwrapped.clone(),
-                    };
-
-                    let chat_score: RewardPoint = self.chat_points.get(&token_by_chat).unwrap_or(0);
-                    let new_score = chat_score + reward_score;
-                    self.chat_points.insert(&token_by_chat, &new_score);
-                    self.total_chat_points += new_score;
-
-                    if token_id_unwrapped == NEAR {
-                        Promise::new(TREASURE_ACCOUNT_ID.to_string()).transfer(treasure_fee);
-                    } else {
-                        ext_fungible_token::ft_transfer(
-                            TREASURE_ACCOUNT_ID.to_string(),
-                            treasure_fee.into(),
-                            Some(format!(
-                                "Sending to treasure: {} of {:?} from @{}",
-                                treasure_fee,
-                                token_id_unwrapped,
-                                env::current_account_id()
-                            )),
-                            &token_id_unwrapped,
-                            ONE_YOCTO,
-                            GAS_FOR_FT_TRANSFER,
-                        )
-                            .then(ext_self::after_ft_transfer_to_treasure(
-                                chat_id_unwrapped,
-                                treasure_fee.into(),
-                                token_id_unwrapped.clone(),
-                                &env::current_account_id(),
-                                NO_DEPOSIT,
-                                GAS_FOR_AFTER_FT_TRANSFER,
-                            ));
-                    }
-
-                    env::log(format!("@{} tipped {} of {:?} for telegram account {}. {} reward point(s) for chat {} added. Total: {}", sender_account_id, tip_amount, token_id_unwrapped, telegram_account, reward_score, chat_id_unwrapped, new_score).as_bytes());
-                } else {
-                    env::log(format!("@{} tipped {} of {:?} for telegram account {}. No reward point(s) added", sender_account_id, tip_amount, token_id_unwrapped, telegram_account).as_bytes());
-                }
-            }
-        } else {
-            env::log(format!("@{} tipped {} of {:?} for telegram account {}", sender_account_id, tip_amount, token_id_unwrapped, telegram_account).as_bytes());
-        }
     }
 
+    #[private]
     pub fn after_ft_transfer_to_treasure(
         &mut self,
         chat_id: TelegramChatId,
         treasure_fee: WrappedBalance,
         token_account_id: TokenAccountId,
     ) -> bool {
-        assert_eq!(
-            env::predecessor_account_id(),
-            env::current_account_id(),
-            "Callback can only be called from the contract"
-        );
-
         let promise_success = is_promise_success();
         if !is_promise_success() {
             log!(
@@ -605,10 +593,9 @@ impl NearTips {
                                 telegram_account: TelegramAccountId,
                                 amount: WrappedBalance,
                                 chat_id: Option<TelegramChatId>,
-                                token_id: Option<TokenAccountId>,
-                                treasure_fee_numerator: Option<TreasureFeeNumerator>) {
+                                token_id: Option<TokenAccountId>) {
         let account_id = env::predecessor_account_id();
-        self.send_tip_to_telegram_from_account(account_id, telegram_account, amount, chat_id, token_id, treasure_fee_numerator);
+        self.send_tip_to_telegram_from_account(account_id, telegram_account, amount, chat_id, token_id);
     }
 
     pub fn send_tip_to_telegram_with_auth(&mut self,
@@ -616,12 +603,14 @@ impl NearTips {
                                           amount: WrappedBalance,
                                           chat_id: Option<TelegramChatId>,
                                           token_id: Option<TokenAccountId>) -> Promise {
-        assert!(self.tip_available, "Tips paused");
+        self.assert_tip_available();
         assert!(amount.0 > 0, "Positive amount needed");
-        self.assert_check_whitelisted_token(token_id.clone());
+        self.assert_check_whitelisted_token(&token_id);
 
         let account_id = env::predecessor_account_id();
-        let deposit: Balance = NearTips::get_deposit(self, account_id.clone(), token_id.clone()).0;
+        let account_id_prepared : ValidAccountId = ValidAccountId::try_from(account_id.clone()).unwrap();
+
+        let deposit: Balance = NearTips::get_deposit(self, account_id_prepared, token_id.clone()).0;
 
         assert!(amount.0 <= deposit, "Not enough tokens to tip (Deposit: {}. Requested: {})", deposit, amount.0);
 
@@ -650,23 +639,23 @@ impl NearTips {
                                                                   tip_amount: Balance,
                                                                   telegram_account: TelegramAccountId,
                                                                   chat_id: Option<TelegramChatId>,
-                                                                  token_id: Option<TokenAccountId>,
-                                                                  treasure_fee_numerator: Option<TreasureFeeNumerator>) {
+                                                                  token_id: Option<TokenAccountId>) {
         assert_eq!(
             env::predecessor_account_id(),
             env::current_account_id(),
             "Callback can only be called from the contract"
         );
 
-        let token_id_unwrapped = NearTips::unwrap_token_id(token_id.clone());
+        let token_id_unwrapped = NearTips::unwrap_token_id(&token_id);
 
-        let sender_deposit: Balance = self.get_deposit(sender_account_id.clone(), token_id.clone()).0;
+        let sender_account_id_prepared : ValidAccountId = ValidAccountId::try_from(sender_account_id.clone()).unwrap();
+        let sender_deposit: Balance = self.get_deposit(sender_account_id_prepared.clone(), token_id.clone()).0;
         assert!(tip_amount <= sender_deposit, "Not enough tokens to tip (Deposit: {}. Requested: {})", sender_deposit, tip_amount);
 
         match account {
             Some(account_id) => {
                 let valid_account_id = ValidAccountId::try_from(account_id.clone()).unwrap();
-                self.deposit_amount_to_account(valid_account_id, tip_amount, token_id);
+                self.deposit_amount_to_account(valid_account_id.as_ref(), tip_amount, token_id);
                 self.deposits.insert(
                     &TokenByNearAccount {
                         account_id: sender_account_id.clone(),
@@ -677,19 +666,19 @@ impl NearTips {
             }
             None => {
                 env::log(format!("Authorized contact wasn't found for telegram {}. Continue to send from @{}", telegram_account, sender_account_id).as_bytes());
-                self.send_tip_to_telegram_from_account(sender_account_id, telegram_account, U128::from(tip_amount), chat_id, token_id, treasure_fee_numerator);
+                self.send_tip_to_telegram_from_account(sender_account_id, telegram_account, U128::from(tip_amount), chat_id, token_id);
             }
         }
     }
 
-    pub(crate) fn assert_check_whitelisted_token(&self, token_id: Option<TokenAccountId>) {
-        if token_id.is_some() {
-            assert!(self.whitelisted_tokens.contains(&token_id.unwrap()), "Token wasn't whitelisted");
+    pub(crate) fn assert_check_whitelisted_token(&self, token_id: &Option<TokenAccountId>) {
+        if let Some(token_id) = token_id {
+            assert!(self.whitelisted_tokens.contains(&token_id), "Token wasn't whitelisted");
         }
     }
 
     pub fn whitelist_token(&mut self, token_id: TokenAccountId) {
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        NearTips::assert_master_account_id();
 
         if !self.whitelisted_tokens.contains(&token_id) {
             self.whitelisted_tokens.insert(&token_id);
@@ -700,8 +689,8 @@ impl NearTips {
         self.whitelisted_tokens.contains(&token_id)
     }
 
-    pub(crate) fn unwrap_token_id(token_id: Option<TokenAccountId>) -> TokenAccountId {
-        token_id.unwrap_or_else(|| NEAR.to_string())
+    pub(crate) fn unwrap_token_id(token_id: &Option<TokenAccountId>) -> TokenAccountId {
+        token_id.clone().unwrap_or_else(|| NEAR.to_string())
     }
 
     // centralized tips withdraw, with master_account authorisation
@@ -709,13 +698,13 @@ impl NearTips {
                                   telegram_account: TelegramAccountId,
                                   account_id: AccountId,
                                   token_id: Option<TokenAccountId>) -> Promise { // TODO FT ft_on_transfer
-        assert!(self.withdraw_available, "Withdrawals paused");
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        self.assert_withdraw_available();
+        NearTips::assert_master_account_id();
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
         let balance: Balance = self.get_balance(telegram_account, token_id.clone()).0;
 
-        let token_id_unwrapped = NearTips::unwrap_token_id(token_id);
+        let token_id_unwrapped = NearTips::unwrap_token_id(&token_id);
 
         let amount: Balance;
 
@@ -820,7 +809,8 @@ impl NearTips {
                 amount.0
             );
 
-            let current_deposit = self.get_deposit(account_id.clone(), Some(token_account_id.clone()));
+            let account_id_prepared : ValidAccountId = ValidAccountId::try_from(account_id.clone()).unwrap();
+            let current_deposit = self.get_deposit(account_id_prepared, Some(token_account_id.clone()));
 
             self.deposits.insert(
                 &TokenByNearAccount {
@@ -838,7 +828,7 @@ impl NearTips {
     pub fn withdraw_from_telegram_with_auth(&mut self,
                                             telegram_account: TelegramAccountId,
                                             token_id: Option<TokenAccountId>) -> Promise {
-        assert!(self.withdraw_available, "Withdrawals paused");
+        self.assert_withdraw_available();
 
         let account_id = env::predecessor_account_id();
 
@@ -880,7 +870,7 @@ impl NearTips {
 
                 let telegram_account = contact.account_id.unwrap();
                 let predecessor_account_id = env::predecessor_account_id();
-                let token_id_unwrapped = NearTips::unwrap_token_id(token_id);
+                let token_id_unwrapped = NearTips::unwrap_token_id(&token_id);
 
                 self.telegram_tips.insert(
                     &TokenByTelegramAccount {
@@ -928,15 +918,16 @@ impl NearTips {
 
     // withdraw from deposit
     pub fn withdraw(&mut self, token_id: Option<TokenAccountId>) -> Promise {
-        assert!(self.withdraw_available, "Withdrawals paused");
-        self.assert_check_whitelisted_token(token_id.clone());
+        self.assert_withdraw_available();
+        self.assert_check_whitelisted_token(&token_id);
 
         let account_id = env::predecessor_account_id();
-        let deposit: Balance = NearTips::get_deposit(self, account_id.clone(), token_id.clone()).0;
+        let account_id_prepared : ValidAccountId = ValidAccountId::try_from(account_id.clone()).unwrap();
+        let deposit: Balance = NearTips::get_deposit(self, account_id_prepared, token_id.clone()).0;
 
         assert!(deposit > 0, "Missing deposit");
 
-        let token_id_unwrapped = NearTips::unwrap_token_id(token_id);
+        let token_id_unwrapped = NearTips::unwrap_token_id(&token_id);
 
         self.deposits.insert(
             &TokenByNearAccount {
@@ -976,7 +967,7 @@ impl NearTips {
 
     pub fn withdraw_linkdrop(&mut self, public_key: String, telegram_account: TelegramAccountId) -> Promise {
         self.assert_withdraw_available();
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        NearTips::assert_master_account_id();
         // TODO Linkdrop for NOT NEAR???
         let balance: Balance = NearTips::get_balance(self, telegram_account, Some(NEAR.to_string())).0;
         assert!(balance > WITHDRAW_COMMISSION + ACCESS_KEY_ALLOWANCE, "Not enough tokens to pay for key allowance and withdraw commission");
@@ -1008,12 +999,13 @@ impl NearTips {
     #[payable]
     // tip from balance to near account deposit without knowing NEAR account_id. telegram_account is numeric ID 123123123
     pub fn tip_contact_to_deposit(&mut self, telegram_account: TelegramAccountId, amount: WrappedBalance, token_id: Option<TokenAccountId>) -> Promise {
-        assert!(self.tip_available, "Tips paused");
+        self.assert_tip_available();
         assert!(amount.0 > 0, "Positive amount needed");
-        self.assert_check_whitelisted_token(token_id.clone());
+        self.assert_check_whitelisted_token(&token_id);
 
         let account_id = env::predecessor_account_id();
-        let deposit: Balance = NearTips::get_deposit(self, account_id.clone(), token_id.clone()).0;
+        let account_id_prepared : ValidAccountId = ValidAccountId::try_from(account_id.clone()).unwrap();
+        let deposit: Balance = NearTips::get_deposit(self, account_id_prepared, token_id.clone()).0;
 
         let contact: Contact = Contact {
             category: ContactCategories::Telegram,
@@ -1054,7 +1046,8 @@ impl NearTips {
         assert!(!account.is_none(), "Owner not found");
         let receiver_account_id: AccountId = account.unwrap();
 
-        let sender_deposit: Balance = NearTips::get_deposit(self, sender_account_id.clone(), token_id.clone()).0;
+        let sender_account_id_prepared : ValidAccountId = ValidAccountId::try_from(sender_account_id.clone()).unwrap();
+        let sender_deposit: Balance = NearTips::get_deposit(self, sender_account_id_prepared, token_id.clone()).0;
         let token_id_unwrapped = token_id.clone().unwrap_or_else(|| NEAR.to_string());
         self.deposits.insert(
             &TokenByNearAccount {
@@ -1063,7 +1056,8 @@ impl NearTips {
             },
             &(sender_deposit - amount));
 
-        let receiver_deposit: Balance = NearTips::get_deposit(self, receiver_account_id.clone(), token_id).0;
+        let receiver_account_id_prepared : ValidAccountId = ValidAccountId::try_from(receiver_account_id.clone()).unwrap();
+        let receiver_deposit: Balance = NearTips::get_deposit(self, receiver_account_id_prepared, token_id).0;
         self.deposits.insert(
             &TokenByNearAccount {
                 account_id: receiver_account_id.clone(),
@@ -1078,7 +1072,7 @@ impl NearTips {
     #[payable]
     // tip attached tokens without knowing NEAR account id
     pub fn tip_contact_with_attached_tokens(&mut self, contact: Contact) -> Promise {
-        assert!(self.tip_available, "Tips paused");
+        self.assert_tip_available();
         let deposit: Balance = near_sdk::env::attached_deposit();
 
         let account_id = env::predecessor_account_id();
@@ -1325,8 +1319,8 @@ impl NearTips {
         // check tips sent exactly to contacts belongs to undefined account
         let balance_of_undefined_account: Balance = NearTips::get_tip_by_contact(self, UNDEFINED_ACCOUNT_ID.to_string(), contact.clone()).0;
 
-        env::log(format!("balance_of_account  {} found", balance_of_account).as_bytes());
-        env::log(format!("balance_of_undefined_account  {} found", balance_of_undefined_account).as_bytes());
+        env::log(format!("balance_of_account {} found", balance_of_account).as_bytes());
+        env::log(format!("balance_of_undefined_account {} found", balance_of_undefined_account).as_bytes());
 
         if balance_of_account > 0 && balance_of_undefined_account > 0 {
             env::log(format!("Tips for account & undefined account {} found", account_id).as_bytes());
@@ -1421,7 +1415,7 @@ impl NearTips {
 
 
     pub fn set_withdraw_available(&mut self, withdraw_available: bool) {
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        NearTips::assert_master_account_id();
         self.withdraw_available = withdraw_available;
     }
 
@@ -1430,7 +1424,7 @@ impl NearTips {
     }
 
     pub fn set_tip_available(&mut self, tip_available: bool) {
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        NearTips::assert_master_account_id();
         self.tip_available = tip_available;
     }
 
@@ -1439,7 +1433,7 @@ impl NearTips {
     }
 
     pub fn set_generic_tips_available(&mut self, generic_tips_available: bool) {
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        NearTips::assert_master_account_id();
         self.generic_tips_available = generic_tips_available;
     }
 
@@ -1451,15 +1445,15 @@ impl NearTips {
                                     account_id: AccountId,
                                     token_id: Option<TokenAccountId>) {
         self.assert_withdraw_available();
-        self.assert_check_whitelisted_token(token_id.clone());
-        assert!(env::predecessor_account_id() == MASTER_ACCOUNT_ID, "No access");
+        self.assert_check_whitelisted_token(&token_id);
+        NearTips::assert_master_account_id();
         assert!(env::is_valid_account_id(account_id.as_bytes()), "Account @{} is invalid", account_id);
 
         let balance: Balance = NearTips::get_balance(self, telegram_account, token_id.clone()).0;
 
         let amount: Balance;
 
-        let token_id_unwrapped = NearTips::unwrap_token_id(token_id.clone());
+        let token_id_unwrapped = NearTips::unwrap_token_id(&token_id);
         if token_id_unwrapped == NEAR { // TODO commission for DAI withdrawals?
             assert!(balance > WITHDRAW_COMMISSION, "Not enough tokens to pay transfer commission");
             amount = balance - WITHDRAW_COMMISSION;
@@ -1468,7 +1462,9 @@ impl NearTips {
             amount = balance;
         }
 
-        let deposit: Balance = NearTips::get_deposit(self, account_id.clone(), token_id).0;
+        let account_id_prepared : ValidAccountId = ValidAccountId::try_from(account_id.clone()).unwrap();
+
+        let deposit: Balance = NearTips::get_deposit(self, account_id_prepared, token_id).0;
         self.deposits.insert(
             &TokenByNearAccount {
                 account_id: account_id.clone(),
@@ -1487,6 +1483,10 @@ impl NearTips {
 
     pub fn assert_self() {
         assert_eq!(env::predecessor_account_id(), env::current_account_id());
+    }
+
+    pub fn assert_master_account_id(){
+        assert_eq!(env::predecessor_account_id(), MASTER_ACCOUNT_ID, "No access");
     }
 
     pub fn get_master_account_id() -> String {
@@ -1667,6 +1667,7 @@ impl NearTips {
             telegram_tips_v1: old_contract.telegram_tips_v1,
             total_chat_points: 0,
             chat_settings: LookupMap::new(StorageKey::ChatSettingsLookupMap),
+            treasure: LookupMap::new(StorageKey::TreasureLookupMap),
         }
     }
 
@@ -1678,9 +1679,9 @@ impl NearTips {
         msg: String,
     ) -> PromiseOrValue<U128> {
         let token_account_id = Some(env::predecessor_account_id());
-        self.assert_check_whitelisted_token(token_account_id.clone());
+        self.assert_check_whitelisted_token(&token_account_id);
 
-        self.deposit_amount_to_account(sender_id, amount.0, token_account_id);
+        self.deposit_amount_to_account(sender_id.as_ref(), amount.0, token_account_id);
 
         PromiseOrValue::Value(0.into())
     }

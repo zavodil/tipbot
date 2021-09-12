@@ -17,10 +17,10 @@ const carol_contact_id = 9876543210;
 
 const chat_id = 9999;
 const chat_admin = bob;
+const treasure_fee_numerator = 10;
 
 const tipbot_account_id = process.env.REACT_CONTRACT_ID;
 const ft_contract_account_id = "token.zavodil.testnet";
-const treasure_account_id = "treasure.zavodil.testnet";
 
 const deposit_size = 4.678;
 const tip_size = 0.5234;
@@ -41,6 +41,17 @@ describe("Contract set", () => {
     test("Contract is not null " + tipbot_account_id, async () => {
         //const contractName = await near.deploy("tipbot.wasm");
         expect(tipbot_account_id).not.toBe(undefined)
+    });
+
+    test("Init contract", async () => {
+        await near.call("new", {}, {account_id: tipbot_account_id});
+
+        const ft = new contract(ft_contract_account_id);
+        await ft.call("storage_deposit", {}, {account_id: tipbot_account_id, tokens: utils.ConvertToNear(0.2)});
+
+        await near.call("whitelist_token", {token_id: "near"}, {account_id: admin});
+
+        await near.call("add_chat_settings", {chat_id, admin_account_id: chat_admin, treasure_fee_numerator}, {account_id: admin});
     });
 
     test('Accounts has enough funds', async () => {
@@ -136,7 +147,7 @@ describe("Deposit and Withdraw", () => {
         const alice_deposit_1 = await near.viewNearBalance("get_deposit", {account_id: alice});
         const bob_wallet_balance_1 = await near.accountNearBalance(bob);
 
-        const deposit = await near.call("deposit_to_account", {account_id: alice},
+        const deposit = await near.call("deposit", {account_id: alice},
             {account_id: bob, tokens: utils.ConvertToNear(tip_size * 2)});
         expect(deposit.type).not.toBe('FunctionCallError');
 
@@ -382,8 +393,8 @@ const ft = new contract(ft_contract_account_id);
 near create-account token.zavodil.testnet --masterAccount=zavodil.testnet --initialBalance=3
 near deploy token.zavodil.testnet /var/www/html/nearspace.info/apps/fungible_token.wasm new '{"owner_id": "zavodil.testnet", "total_supply": "1000000000000000000000000", "metadata": {"spec": "ft-1.0.0", "name": "Zavodil Token", "symbol": "ZAV", "decimals": 18}}'
 
-near call token.zavodil.testnet storage_deposit '{}' --accountId dev-1627929046372-37713905244524 --deposit 0.2
-near call dev-1627929046372-37713905244524 whitelist_token '{"token_id": "near"}' --accountId zavodil.testnet
+near call token.zavodil.testnet storage_deposit '{}' --accountId dev-1628616977178-19179728999210 --deposit 0.2
+near call dev-1628616977178-19179728999210 whitelist_token '{"token_id": "near"}' --accountId zavodil.testnet
 
 
 Transfer
@@ -536,41 +547,37 @@ describe("Chat Points", () => {
 
         const chat_score_1 = await near.viewNearBalance("get_chat_score", {chat_id: chat_id});
 
-        const treasure_deposit_1 = await near.accountNearBalance(treasure_account_id);
+        const treasuer_balance_1 = await near.viewNearBalance("get_treasure_balance", {});
 
-        const treasure_fee_numerator_1 = 10;
         let send_1 = await near.call("send_tip_to_telegram", {
             telegram_account: random_telegram_id_1,
             amount: utils.ConvertToNear(tip_size),
-            chat_id: chat_id,
-            treasure_fee_numerator: treasure_fee_numerator_1
+            chat_id: chat_id
         }, {
             account_id: alice
         });
         expect(send_1.type).not.toBe('FunctionCallError');
 
         const chat_score_2 = await near.viewNearBalance("get_chat_score", {chat_id: chat_id});
-        expect(utils.RoundFloat(chat_score_2 - chat_score_1)).toBe(tip_size * treasure_fee_numerator_1 / 100);
+        expect(utils.RoundFloat(chat_score_2 - chat_score_1)).toBe(tip_size * treasure_fee_numerator / 100);
 
-        const treasure_deposit_2 = await near.accountNearBalance(treasure_account_id);
-        expect(utils.RoundFloat(treasure_deposit_2 - treasure_deposit_1)).toBe(tip_size * treasure_fee_numerator_1 / 100);
+        const treasuer_balance_2 = await near.viewNearBalance("get_treasure_balance", {});
+        expect(utils.RoundFloat(treasuer_balance_2 - treasuer_balance_1)).toBe(tip_size * treasure_fee_numerator / 100);
 
-        const treasure_fee_numerator_2 = 5;
         let send_2 = await near.call("send_tip_to_telegram", {
             telegram_account: random_telegram_id_1,
             amount: utils.ConvertToNear(tip_size),
-            chat_id: chat_id,
-            treasure_fee_numerator: treasure_fee_numerator_2
+            chat_id: chat_id
         }, {
             account_id: alice
         });
         expect(send_2.type).not.toBe('FunctionCallError');
 
         const chat_score_3 = await near.viewNearBalance("get_chat_score", {chat_id: chat_id});
-        expect(utils.RoundFloat(chat_score_3 - chat_score_2)).toBe(tip_size * treasure_fee_numerator_2 / 100);
+        expect(utils.RoundFloat(chat_score_3 - chat_score_2)).toBe(tip_size * treasure_fee_numerator / 100);
 
-        const treasure_deposit_3 = await near.accountNearBalance(treasure_account_id);
-        expect(utils.RoundFloat(treasure_deposit_3 - treasure_deposit_2)).toBe(tip_size * treasure_fee_numerator_2 / 100);
+        const treasuer_balance_3 = await near.viewNearBalance("get_treasure_balance", {});
+        expect(utils.RoundFloat(treasuer_balance_3 - treasuer_balance_2)).toBe(tip_size * treasure_fee_numerator / 100);
     });
 
     test("Send FT tips with chat_id", async () => {
@@ -586,15 +593,13 @@ describe("Chat Points", () => {
             token_id: ft_contract_account_id
         });
 
-        const treasure_ft_balance_1 = await ft.viewDaiBalance("ft_balance_of", {account_id: treasure_account_id});
+        const treasure_ft_balance_1 = await near.viewDaiBalance("get_treasure_balance", {token_account_id: ft_contract_account_id});
 
-        const treasure_fee_numerator_1 = 10;
         let send_1 = await near.call("send_tip_to_telegram", {
             telegram_account: random_telegram_id_1,
             amount: ft_tip_size,
             chat_id: chat_id,
-            token_id: ft_contract_account_id,
-            treasure_fee_numerator: treasure_fee_numerator_1
+            token_id: ft_contract_account_id
         }, {
             account_id: alice
         });
@@ -603,18 +608,16 @@ describe("Chat Points", () => {
         const chat_score_2 = await near.viewDaiBalance("get_chat_score", {
             chat_id: chat_id, token_id: ft_contract_account_id
         });
-        expect(utils.RoundFloat(chat_score_2 - chat_score_1)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size) * treasure_fee_numerator_1 / 100, 3);
+        expect(utils.RoundFloat(chat_score_2 - chat_score_1)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size) * treasure_fee_numerator / 100, 3);
 
-        const treasure_ft_balance_2 = await ft.viewDaiBalance("ft_balance_of", {account_id: treasure_account_id});
-        expect(utils.RoundFloat(treasure_ft_balance_2 - treasure_ft_balance_1)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size * treasure_fee_numerator_1 / 100), 3);
+        const treasure_ft_balance_2 = await near.viewDaiBalance("get_treasure_balance", {token_account_id: ft_contract_account_id});
+        expect(utils.RoundFloat(treasure_ft_balance_2 - treasure_ft_balance_1)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size * treasure_fee_numerator / 100), 3);
 
-        const treasure_fee_numerator_2 = 5;
         let send_2 = await near.call("send_tip_to_telegram", {
             telegram_account: random_telegram_id_1,
             amount: ft_tip_size,
             chat_id: chat_id,
-            token_id: ft_contract_account_id,
-            treasure_fee_numerator: treasure_fee_numerator_2
+            token_id: ft_contract_account_id
         }, {
             account_id: alice
         });
@@ -623,20 +626,18 @@ describe("Chat Points", () => {
         const chat_score_3 = await near.viewDaiBalance("get_chat_score", {
             chat_id: chat_id, token_id: ft_contract_account_id
         });
-        expect(utils.RoundFloat(chat_score_3 - chat_score_2)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size) * treasure_fee_numerator_2 / 100, 3);
+        expect(utils.RoundFloat(chat_score_3 - chat_score_2)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size) * treasure_fee_numerator / 100, 3);
 
-        const treasure_ft_balance_3 = await ft.viewDaiBalance("ft_balance_of", {account_id: treasure_account_id});
-        expect(utils.RoundFloat(treasure_ft_balance_3 - treasure_ft_balance_2)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size * treasure_fee_numerator_2 / 100), 3);
+        const treasure_ft_balance_3 = await near.viewDaiBalance("get_treasure_balance", {token_account_id: ft_contract_account_id});
+        expect(utils.RoundFloat(treasure_ft_balance_3 - treasure_ft_balance_2)).toBeCloseTo(utils.ConvertFromDai(ft_tip_size * treasure_fee_numerator / 100), 3);
     });
 
     test("Add chat settings", async () => {
-        const treasure_fee_numerator = 1;
         const add_chat_settings = await near.call("add_chat_settings", {
             chat_id: chat_id,
             admin_account_id: chat_admin,
-            treasure_fee_numerator: treasure_fee_numerator
+            treasure_fee_numerator
         }, {account_id: admin});
-        expect(add_chat_settings.type).not.toBe('FunctionCallError');
 
         const deposit = await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
         expect(deposit.type).not.toBe('FunctionCallError');
@@ -644,8 +645,7 @@ describe("Chat Points", () => {
         let send_near = await near.call("send_tip_to_telegram", {
             telegram_account: bob_contact_id,
             amount: ft_tip_size,
-            chat_id: chat_id,
-            treasure_fee_numerator: treasure_fee_numerator
+            chat_id: chat_id
         }, {
             account_id: alice
         });

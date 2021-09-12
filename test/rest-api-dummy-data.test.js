@@ -42,7 +42,7 @@ describe("Insert dummy data", () => {
         for (let i = 1; i <= 200; i++) {
             let account = `account_${i}.testnet`;
             let tokens = i / 1000;
-            const deposit_to_account = await near.call("deposit_to_account", {account_id: account},
+            const deposit_to_account = await near.call("deposit", {account_id: account},
                 {account_id: admin, tokens: utils.ConvertToNear(tokens)});
             expect(deposit_to_account.type).not.toBe('FunctionCallError');
         }
@@ -57,10 +57,10 @@ describe("Insert dummy data", () => {
         for (let i = 1; i <= 1000; i++) {
             let telegram_account = `1000${i}`;
             let tip = i / 1000;
-            const deposit_to_account = await near.call("send_tip_to_telegram",
+            const send_tip_to_telegram = await near.call("send_tip_to_telegram",
                 {telegram_account: telegram_account, amount: utils.ConvertToNear(tip)},
                 {account_id: alice});
-            expect(deposit_to_account.type).not.toBe('FunctionCallError');
+            expect(send_tip_to_telegram.type).not.toBe('FunctionCallError');
         }
     });
 });
