@@ -9,7 +9,13 @@ const config = require("./config");
 
 module.exports = {
     ConvertYoctoNear: (value, frac_digits) => {
-        return utils.format.formatNearAmount(value, frac_digits).replace(",", "");
+        try {
+            return utils.format.formatNearAmount(value, frac_digits).replace(",", "");
+        }
+        catch (e) {
+            console.log("ConvertYoctoNear error, value: " + value);
+            console.log(e);
+        }
     },
 
     ConvertFromDai: (value) => {

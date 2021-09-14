@@ -20,8 +20,8 @@
     "deploy:contract:testnet": "export NODE_ENV=testnet && near deploy",
     "build:web:all": "export NODE_ENV=mainnet && rm -r mainnet && parcel build src/index.html --public-url ./ && mv dist mainnet && export NODE_ENV=testnet && rm -r testnet && parcel build src/index.html --public-url ./ && mv dist testnet",
     "dev:clear": "rm -r neardev",
-    "test": "cross-env NODE_ENV=testnet && jest rest-api.test.js --useStderr",
-    "test1": "cross-env NODE_ENV=testnet && jest rest-api.test.js -t 'Send FT tips with chat_id' --useStderr --verbose false",
+    "test": "cross-env NODE_ENV=testnet && jest rest-api.test.js --useStderr --verbose false",
+    "test1": "cross-env NODE_ENV=testnet && jest rest-api.test.js -t 'Chat Points' --useStderr --verbose false",
     "test2": "cross-env NODE_ENV=testnet && cross-env REACT_CONTRACT_ID=dev-1627929046372-377S13905244524 jest rest-api.test.js -t 'Add chat settings' --useStderr --verbose false",
     "test:dummy-data": "cross-env NODE_ENV=testnet && cross-env REACT_CONTRACT_ID=dev-1627929046372-37713905244524 jest rest-api-dummy-data.test.js --useStderr",
     "contract:init": "cross-env NODE_ENV=testnet && jest rest-api.test.js -t 'Contract set' --useStderr"

@@ -39,7 +39,7 @@ contract.prototype.viewDaiBalance = async function (method, params, options) {
 };
 
 contract.prototype.accountNearBalance = async function (account_id, delay) {
-    delay = delay || 500;
+    delay = delay || 1000;
     await timeout(delay);
 
     return await utils.GetResponse("balance", account_id, {convertToNear: true})

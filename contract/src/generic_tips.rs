@@ -1,13 +1,66 @@
 use crate::*;
 
-// cannot find attribute `callback` in this scope
+/* GENERIC TIPS, using tips object */
+const UNDEFINED_ACCOUNT_ID: &str = "";
 
+#[near_bindgen]
 impl NearTips {
-    /* GENERIC TIPS, using tips object */
-
-    pub(crate) fn assert_generic_tips_available(&self){
+    pub(crate) fn assert_generic_tips_available(&self) {
         assert!(self.generic_tips_available, "Generic tips and withdrawals disabled");
     }
+
+    pub fn set_generic_tips_available(&mut self, generic_tips_available: bool) {
+        self.assert_master_account_id();
+        self.generic_tips_available = generic_tips_available;
+    }
+
+    pub fn get_generic_tips_available(&self) -> bool {
+        self.generic_tips_available
+    }
+
+
+    #[payable]
+    // tip attached tokens without knowing NEAR account id
+    pub fn tip_contact_with_attached_tokens(&mut self, contact: Contact) -> Promise {
+        self.assert_tip_available();
+        self.assert_generic_tips_available();
+
+        let deposit: Balance = near_sdk::env::attached_deposit();
+
+        let account_id = env::predecessor_account_id();
+
+        self.get_contact_owner(contact.clone(), self.auth_account_id.to_string()).
+            then(ext_self::on_get_contact_owner_on_tip_contact_with_attached_tokens(
+                account_id,
+                contact,
+                deposit,
+                &env::current_account_id(),
+                NO_DEPOSIT,
+                CALLBACK_GAS,
+            ))
+    }
+
+
+    pub fn on_get_contact_owner_on_tip_contact_with_attached_tokens(&mut self,
+                                                                    #[callback] account: Option<AccountId>,
+                                                                    sender_account_id: AccountId,
+                                                                    contact: Contact,
+                                                                    deposit: Balance) {
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Callback can only be called from the contract"
+        );
+
+        assert!(!account.is_none(), "Owner not found");
+        let receiver_account_id: AccountId = account.unwrap();
+
+        NearTips::tip_transfer(self, sender_account_id, receiver_account_id, contact, deposit);
+    }
+
+
+
+
 
     pub(crate) fn tip_transfer(&mut self,
                                sender_account_id: AccountId,
@@ -76,10 +129,7 @@ impl NearTips {
     }
 
     pub fn get_tips(&self, account_id: AccountId) -> Option<Vec<Tip>> {
-        match self.tips.get(&account_id) {
-            Some(tips) => Some(tips.to_vec()),
-            None => None
-        }
+        self.tips.get(&account_id).map(|tips| tips.to_vec())
     }
 
     pub fn get_tips_wrapped(&self, account_id: AccountId) -> Option<Vec<TipWrapped>> {
@@ -98,9 +148,12 @@ impl NearTips {
 
     // we can tip contact which doesn't have near account_id yet
     fn withdraw_tip_for_undefined_account(&self, contact: Contact, balance_to_withdraw: Balance) -> Promise {
+        self.assert_withdraw_available();
+        self.assert_generic_tips_available();
+
         let account_id = env::predecessor_account_id();
 
-        self.get_contact_owner(contact.clone(), NearTips::get_auth_contract())
+        self.get_contact_owner(contact.clone(), self.auth_account_id.to_string())
             .then(ext_self::on_get_contact_owner_on_withdraw_tip_for_undefined_account(
                 account_id,
                 contact,
@@ -125,7 +178,6 @@ impl NearTips {
 
         assert!(!account.is_none(), "Owner not found");
         let contact_owner_account_id: AccountId = account.unwrap();
-        let undefined_account_id = NearTips::get_undefined_account();
 
         assert_eq!(
             contact_owner_account_id,
@@ -137,7 +189,7 @@ impl NearTips {
         Promise::new(recipient_account_id)
             .transfer(balance_to_withdraw)
             .then(ext_self::on_withdraw_tip(
-                undefined_account_id,
+                UNDEFINED_ACCOUNT_ID.to_string(),
                 recipient_contact,
                 balance_to_withdraw,
                 &env::current_account_id(),
@@ -147,9 +199,12 @@ impl NearTips {
     }
 
     fn withdraw_tip_for_current_account(&self, contact: Contact, balance_to_withdraw: Balance) -> Promise {
+        self.assert_withdraw_available();
+        self.assert_generic_tips_available();
+
         let account_id = env::predecessor_account_id();
 
-        auth::get_contacts(account_id.clone(), &NearTips::get_auth_contract(), NO_DEPOSIT, BASE_GAS)
+        auth::get_contacts(account_id.clone(), &self.auth_account_id, NO_DEPOSIT, BASE_GAS)
             .then(ext_self::on_get_contacts_on_withdraw_tip_for_current_account(
                 account_id,
                 contact,
@@ -174,7 +229,7 @@ impl NearTips {
         match contacts {
             Some(contacts) => {
                 for contact in &contacts {
-                    env::log(format!("Check:  [{:?} account {:?}]", contact.category, contact.value).as_bytes());
+                    env::log(format!("Check: [{:?} account {:?}]", contact.category, contact.value).as_bytes());
                     if NearTips::are_contacts_equal(contact.clone(), recipient_contact.clone()) {
                         Promise::new(recipient_account_id.clone())
                             .transfer(balance)
@@ -210,11 +265,10 @@ impl NearTips {
         let balance_of_account: Balance = NearTips::get_tip_by_contact(self, account_id.clone(), contact.clone()).0;
 
         // check tips sent exactly to contacts belongs to undefined account
-        let undefined_account_id = NearTips::get_undefined_account();
-        let balance_of_undefined_account: Balance = NearTips::get_tip_by_contact(self, undefined_account_id, contact.clone()).0;
+        let balance_of_undefined_account: Balance = NearTips::get_tip_by_contact(self, UNDEFINED_ACCOUNT_ID.to_string(), contact.clone()).0;
 
-        env::log(format!("balance_of_account  {} found", balance_of_account).as_bytes());
-        env::log(format!("balance_of_undefined_account  {} found", balance_of_undefined_account).as_bytes());
+        env::log(format!("balance_of_account {} found", balance_of_account).as_bytes());
+        env::log(format!("balance_of_undefined_account {} found", balance_of_undefined_account).as_bytes());
 
         if balance_of_account > 0 && balance_of_undefined_account > 0 {
             env::log(format!("Tips for account & undefined account {} found", account_id).as_bytes());
@@ -235,8 +289,8 @@ impl NearTips {
         }
     }
 
+    #[private]
     pub fn on_withdraw_tip(&mut self, account_id: AccountId, contact: Contact, balance: Balance) -> bool {
-        NearTips::assert_self();
 
         let transfer_succeeded = is_promise_success();
         if transfer_succeeded {
@@ -275,35 +329,6 @@ impl NearTips {
             }
         } else {
             false
-        }
-    }
-
-    pub(crate) fn are_contacts_equal(contact1: Contact, contact2: Contact) -> bool {
-        if contact1.category == ContactCategories::Telegram && contact2.category == ContactCategories::Telegram {
-            contact1.account_id == contact2.account_id
-        } else {
-            contact1.category == contact2.category && contact1.value == contact2.value
-        }
-    }
-
-    pub fn get_tip_by_contact(&self, account_id: AccountId, contact: Contact) -> WrappedBalance {
-        match self.tips.get(&account_id) {
-            Some(tips) => {
-                let filtered_tip: Vec<_> =
-                    tips
-                        .iter()
-                        .filter(|tip| NearTips::are_contacts_equal(tip.contact.clone(), contact.clone()))
-                        .collect();
-
-                let tips_quantity = filtered_tip.len();
-
-                if tips_quantity == 1 {
-                    WrappedBalance::from(filtered_tip[0].amount)
-                } else {
-                    WrappedBalance::from(0)
-                }
-            }
-            None => WrappedBalance::from(0)
         }
     }
 
