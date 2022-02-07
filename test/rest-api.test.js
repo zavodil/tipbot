@@ -725,6 +725,38 @@ describe("Chat Points", () => {
     });
 
     test("Redeem Tiptokens", async () => {
+
+        const tiptoken_balance_alice_1 = await tiptoken_contract.viewNearBalance("ft_balance_of", {account_id: alice});
+        const tiptoken_balance_app_1 = await tiptoken_contract.viewNearBalance("ft_balance_of", {account_id: tipbot_account_id});
+        const get_total_tiptokens_1 = await near.viewNearBalance("get_total_tiptokens", {});
+
+         const add_chat_settings = await near.call("add_chat_settings", {
+            chat_id: chat_id,
+            admin_account_id: chat_admin,
+            treasure_fee_numerator,
+            track_chat_points: true
+        }, {account_id: admin});
+        expect(add_chat_settings.type).not.toBe('FunctionCallError');
+
+        const chat_settings = await near.view("get_chat_settings", {chat_id: chat_id});
+        expect(chat_settings.admin_account_id).toBe(chat_admin);
+
+        const deposit = await near.call("deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(deposit_size)});
+        expect(deposit.type).not.toBe('FunctionCallError');
+
+        let send_near = await near.call("send_tip_to_telegram", {
+            telegram_account: bob_contact_id,
+            amount: tip_size,
+            chat_id: chat_id,
+        }, {
+            account_id: alice
+        });
+        expect(send_near.type).not.toBe('FunctionCallError');
+
+        const get_total_tiptokens_2 = await near.viewNearBalance("get_total_tiptokens", {});
+        expect(utils.RoundFloat(get_total_tiptokens_2 - get_total_tiptokens_1)).toBeCloseTo(utils.RoundFloat(tip_size * (chat_tiptoken_fraction + sender_tiptoken_fraction)), 3);
+
+
         // ft_tansfer
         // redeem
         // check balance
