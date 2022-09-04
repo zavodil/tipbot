@@ -32,7 +32,10 @@ contract.prototype.viewNearBalance = async function (method, params, options) {
     return await this.view(method, params, options);
 };
 
-contract.prototype.viewDaiBalance = async function (method, params, options) {
+contract.prototype.viewDaiBalance = async function (method, params, options, delay) {
+    delay = delay || 0;
+    await timeout(delay);
+
     options = options || {};
     options.convertFromDai = true;
     return await this.view(method, params, options);

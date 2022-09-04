@@ -13,7 +13,7 @@
     "deploy": "npm run build && npm run deploy:contract && npm run deploy:pages",
     "prestart": "npm run build:contract:debug && npm run dev:deploy:contract",
     "start": "export PORT=38560 && echo The app is starting! It will automatically open in your browser when ready && env-cmd -f ./neardev/dev-account.env parcel src/index.html --open",
-    "dev": "export PORT=38560 && nodemon --watch contract/src -e rs --exec \"npm run start\"",
+    "dev": "export PORT=38560 && nodemon --watch contract/src-old -e rs --exec \\\"npm run start\\\"",
     "test:contract": "npm run build:contract:debug && cd contract && cargo test -- --nocapture && cd .. && jest test --runInBand",
     "build:web:testnet": "export NODE_ENV=testnet && rm -r testnet && parcel build src/index.html --public-url ./ && mv dist testnet",
     "build:contract:testnet": "export NODE_ENV=testnet && node contract/compile.js",
@@ -21,11 +21,27 @@
     "build:web:all": "export NODE_ENV=mainnet && rm -r mainnet && parcel build src/index.html --public-url ./ && mv dist mainnet && export NODE_ENV=testnet && rm -r testnet && parcel build src/index.html --public-url ./ && mv dist testnet",
     "dev:clear": "rm -r neardev",
     "test": "cross-env NODE_ENV=testnet && jest rest-api.test.js --useStderr --verbose false",
-    "test1": "cross-env NODE_ENV=testnet && jest rest-api.test.js -t 'Chat Points' --useStderr --verbose false",
-    "test2": "cross-env NODE_ENV=testnet && cross-env REACT_CONTRACT_ID=dev-1627929046372-377S13905244524 jest rest-api.test.js -t 'Add chat settings' --useStderr --verbose false",
+    "test0": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Set' --useStderr",
+    "test1": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'DepositWithdraw' --useStderr",
+    "test2": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'SimpleTip' --useStderr",
+    "test3": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'ServiceTip' --useStderr",
+
+    "test31": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Deposit and Tip Too Much' --useStderr",
+    "test32": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Withdraw or Transfer by not an Admin' --useStderr",
+
+    "test41": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Fail on not whitelisted token' --useStderr",
+    "test42": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Deposit FT' --useStderr",
+    "test43": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Send FT tips' --useStderr",
+    "test44": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Withdraw FT tips from balance' --useStderr",
+    "test45": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Withdraw FT tips from deposit' --useStderr",
+    "test46": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Service Fee generation for FT' --useStderr",
+    "test47": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Service Fee generation for TT' --useStderr",
+
+    "test5": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Claim TipToken' --useStderr",
+
+
     "test:dummy-data": "cross-env NODE_ENV=testnet && cross-env REACT_CONTRACT_ID=dev-1627929046372-37713905244524 jest rest-api-dummy-data.test.js --useStderr",
     "contract:init": "cross-env NODE_ENV=testnet && jest rest-api.test.js -t 'Contract set' --useStderr"
-  
   },
   "devDependencies": {
     "@babel/core": "~7.12.3",

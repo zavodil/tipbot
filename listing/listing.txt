@@ -1,0 +1,34 @@
+export CONTRACT_ID=dev-1662324837827-30381972484194
+export FT_ID=dai.fakes.testnet
+export FT_ID=usdc.fakes.testnet
+export FT_ID=usdt.fakes.testnet
+export FT_ID=usdn.testnet
+export FT_ID=eth.fakes.testnet
+export TT_ID=tiptoken.testnet
+export USER_ID=grant.testnet
+export ADMIN_ID=zavodil2.testnet
+
+./build_local.sh && near dev-deploy --wasmFile=./out/local.wasm
+
+
+near call $CONTRACT_ID new '{"owner_id": "zavodil2.testnet", "tiptoken_account_id": "tiptoken.testnet", "listing_payment": "1"}' --accountId $CONTRACT_ID
+
+near view $CONTRACT_ID get_timestamp '{}'
+
+near call $CONTRACT_ID add_listing_auction '{"end_date": 1662390687000000000, "unlock_date_for_winner": 1662390688000000001}' --accountId $ADMIN_ID
+
+near call $CONTRACT_ID add_token_to_auction '{"auction_id": 1, "token_id": "'$FT_ID'"}' --accountId $USER_ID --deposit 0.02 --gas 200000000000000
+
+near call $TT_ID ft_transfer_call '{"receiver_id": "'$CONTRACT_ID'", "amount": "2000000000000000", "msg": "{\"Vote\": {\"auction_id\": 1, \"listing_token_id\": \"'$FT_ID'\" } }" }' --accountId $USER_ID --depositYocto 1 --gas 35000000000000
+
+near call $CONTRACT_ID set_auction_end_date '{"auction_id": 1, "end_date": 1662315087000000000 }' --accountId $ADMIN_ID
+
+near call $CONTRACT_ID finalize '{"auction_id": 1}' --accountId $USER_ID
+
+
+=====
+near view $CONTRACT_ID get_auctions
+near view $CONTRACT_ID get_existing_tokens
+near view $CONTRACT_ID get_auction_tokens '{"auction_id": 1}'
+near view $CONTRACT_ID get_auction_total_deposits '{"auction_id": 1}'
+near view $FT_ID storage_balance_of '{"account_id": "'$CONTRACT_ID'"}'

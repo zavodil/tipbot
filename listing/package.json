@@ -1,0 +1,46 @@
+{
+	"name": "near-contract",
+	"version": "0.1.0",
+	"license": "MIT",
+	"scripts": {
+		"build": "npm run build:contract && npm run build:web",
+		"build:contract": "node contract/compile.js",
+		"build:contract:debug": "node contract/compile.js --debug",
+		"dev:deploy:contract": "near dev-deploy",
+		"deploy:contract": "near deploy",
+		"build:contract:testnet": "export NODE_ENV=testnet && node contract/compile.js",
+		"deploy:contract:testnet": "export NODE_ENV=testnet && near deploy",
+		"dev:clear": "rm -r neardev",
+		"test:workspace": "cargo run --example main -- --nocapture",
+		"test": "export NODE_ENV=testnet && export CONTRACT_NAME=dev-1640966965154-54263632565336 && jest rest-api.test.js --useStderr --verbose false",
+		"test:create_event": "export NODE_ENV=testnet && export CONTRACT_NAME=dev-1640966965154-54263632565336 && jest rest-api.test.js -t 'Create Event' --useStderr --verbose false"
+	},
+	"devDependencies": {
+		"@babel/core": "~7.12.3",
+		"@babel/preset-env": "~7.12.1",
+		"@babel/preset-react": "~7.12.5",
+		"babel-jest": "~26.6.2",
+		"shelljs": "~0.8.4",
+		"jest": "~26.6.2",
+		"jest-environment-node": "~26.6.2"
+	},
+	"dependencies": {
+		"near-api-js": "^0.44.2",
+		"node-fetch": "^2.6.1",
+		"regenerator-runtime": "~0.13.5"
+	},
+	"jest": {
+		"moduleNameMapper": {
+			"\\.(jpg|ico|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$": "<rootDir>/src/__mocks__/fileMock.js",
+			"\\.(css|less)$": "<rootDir>/src/__mocks__/fileMock.js"
+		},
+		"setupFiles": [
+			"<rootDir>/src/jest.init.js"
+		],
+		"testEnvironment": "near-cli/test_environment",
+		"testPathIgnorePatterns": [
+			"<rootDir>/contract/",
+			"<rootDir>/node_modules/"
+		]
+	}
+}
