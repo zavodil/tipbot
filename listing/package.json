@@ -11,20 +11,42 @@
 		"build:contract:testnet": "export NODE_ENV=testnet && node contract/compile.js",
 		"deploy:contract:testnet": "export NODE_ENV=testnet && near deploy",
 		"dev:clear": "rm -r neardev",
-		"test:workspace": "cargo run --example main -- --nocapture",
-		"test": "export NODE_ENV=testnet && export CONTRACT_NAME=dev-1640966965154-54263632565336 && jest rest-api.test.js --useStderr --verbose false",
-		"test:create_event": "export NODE_ENV=testnet && export CONTRACT_NAME=dev-1640966965154-54263632565336 && jest rest-api.test.js -t 'Create Event' --useStderr --verbose false"
+
+		"test": "cross-env NODE_ENV=testnet && jest auction.test.js --useStderr --verbose false",
+
+		"test0": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'ContractSet' --useStderr --verbose false",
+		"test1": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'CreateAuction' --useStderr --verbose false",
+
+		"test11": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'Reset existing tokens' --useStderr --verbose false",
+		"test12": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'add_listing_auction' --useStderr --verbose false",
+		"test13": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'add_token_to_auction' --useStderr --verbose false",
+		"test14": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'Vote for tokens on auction' --useStderr --verbose false",
+		"test15": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'Add rewards' --useStderr --verbose false",
+		"test16": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'Finalize auction' --useStderr --verbose false",
+		"test17": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'Claim rewards' --useStderr --verbose false",
+		"test18": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'Looser withdraw bids' --useStderr --verbose false",
+		"test19": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'Looser withdraw rewards' --useStderr --verbose false",
+		"test110": "cross-env NODE_ENV=testnet && jest auction.test.js -t 'Withdraw winner bid' --useStderr --verbose false",
+
+
+
+
+
+
+
+		"test:workspace": "cargo run --example main -- --nocapture"
 	},
 	"devDependencies": {
 		"@babel/core": "~7.12.3",
 		"@babel/preset-env": "~7.12.1",
 		"@babel/preset-react": "~7.12.5",
 		"babel-jest": "~26.6.2",
-		"shelljs": "~0.8.4",
 		"jest": "~26.6.2",
-		"jest-environment-node": "~26.6.2"
+		"jest-environment-node": "~26.6.2",
+		"shelljs": "~0.8.4"
 	},
 	"dependencies": {
+		"bn.js": "^5.2.1",
 		"near-api-js": "^0.44.2",
 		"node-fetch": "^2.6.1",
 		"regenerator-runtime": "~0.13.5"

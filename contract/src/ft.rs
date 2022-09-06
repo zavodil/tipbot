@@ -9,7 +9,6 @@ pub const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas(Gas::ONE_TERA.0 * 35);
 
 pub const GAS_FOR_SWAP: Gas = Gas(Gas::ONE_TERA.0 * 10);
 
-//pub const GAS_FOR_AFTER_SWAP: Gas = Gas(Gas::ONE_TERA.0 * 90);
 // GAS_FOR_AFTER_SWAP includes GAS_FOR_WITHDRAW + GAS_FOR_ON_WITHDRAW
 pub const GAS_FOR_WITHDRAW: Gas = Gas(Gas::ONE_TERA.0 * 50);
 pub const GAS_FOR_ON_WITHDRAW: Gas = Gas(Gas::ONE_TERA.0 * 20);
@@ -17,78 +16,8 @@ pub const GAS_FOR_AFTER_SWAP: Gas = Gas(Gas::ONE_TERA.0 * 80);
 
 pub const GAS_FOR_WRAP_NEAR: Gas = Gas(Gas::ONE_TERA.0 * 5);
 // GAS_FOR_ON_WRAP_NEAR includes GAS_FOR_FT_TRANSFER_CALL + GAS_FOR_AFTER_FT_TRANSFER + GAS_FOR_SWAP + GAS_FOR_AFTER_SWAP
-//pub const GAS_FOR_ON_WRAP_NEAR: Gas = Gas(Gas::ONE_TERA.0 * 150);
 pub const GAS_FOR_ON_WRAP_NEAR: Gas = Gas(Gas::ONE_TERA.0 * 180);
 
-/*
-https://explorer.testnet.near.org/transactions/5ixLEQfSutTdEAJQ1XCP66Cb5jHtJ8f99HxTULtSdPSW
-init 9
-
-near_deposit 3
-on_wrap_near 13
-ft_transfer_call 9 + 4 + 2 (мин 30)
-swap 7
-after_swap 9
-withdraw 9 + 3 + 3 + 3
-
- */
-
-
-/*
-works with 250k
-
-pub const GAS_FOR_FT_TRANSFER: Gas = Gas(Gas::ONE_TERA.0 * 10);
-pub const GAS_FOR_AFTER_FT_TRANSFER: Gas = Gas(Gas::ONE_TERA.0 * 10);
-
-pub const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas(Gas::ONE_TERA.0 * 40);
-
-pub const GAS_FOR_SWAP: Gas = Gas(Gas::ONE_TERA.0 * 20);
-
-pub const GAS_FOR_AFTER_SWAP: Gas = Gas(Gas::ONE_TERA.0 * 90);
-// GAS_FOR_AFTER_SWAP includes GAS_FOR_WITHDRAW + GAS_FOR_ON_WITHDRAW
-pub const GAS_FOR_WITHDRAW: Gas = Gas(Gas::ONE_TERA.0 * 50);
-pub const GAS_FOR_ON_WITHDRAW: Gas = Gas(Gas::ONE_TERA.0 * 20);
-
-pub const GAS_FOR_WRAP_NEAR: Gas = Gas(Gas::ONE_TERA.0 * 10);
-// GAS_FOR_ON_WRAP_NEAR includes GAS_FOR_FT_TRANSFER + GAS_FOR_AFTER_FT_TRANSFER + GAS_FOR_SWAP + GAS_FOR_AFTER_SWAP
-//pub const GAS_FOR_ON_WRAP_NEAR: Gas = Gas(Gas::ONE_TERA.0 * 150);
-pub const GAS_FOR_ON_WRAP_NEAR: Gas = Gas(Gas::ONE_TERA.0 * 180);
- */
-
-
-/*
-pub const GAS_FOR_SWAP: Gas = Gas(Gas::ONE_TERA.0 * 20);
-pub const GAS_FOR_WITHDRAW: Gas = Gas(Gas::ONE_TERA.0 * 40);
-pub const GAS_FOR_ON_WITHDRAW: Gas = Gas(Gas::ONE_TERA.0 * 20);
-pub const GAS_FOR_AFTER_SWAP: Gas = Gas(Gas::ONE_TERA.0 * 80);
-pub const GAS_FOR_FT_TRANSFER: Gas = Gas(Gas::ONE_TERA.0 * 10);
-pub const GAS_FOR_AFTER_FT_TRANSFER: Gas = Gas(Gas::ONE_TERA.0 * 10);
- */
-
-/*
-claim
-init 13 Tgas
-
-GAS_FOR_FT_TRANSFER
-ft_transfer_call 9 Tgas
-
-GAS_FOR_SWAP
-swap 5 Tgas
-callback sender 2.4 Tgas
-callback token 3.1 Tgas
-callback sender 2.3 Tgas
-
-
-callback ref 8 Tgas
-
-contract 9 Tgas
-
-withdraw ft_transfer_call 3.7
-withdraw ft_transfer_call callback 2.4
-withdraw ft_transfer_call callback ref 3.2
-withdraw ft_transfer_call callback receiver 3.4
-withdraw ft_transfer_call callback receiver 2
- */
 
 
 

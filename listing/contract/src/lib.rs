@@ -24,6 +24,7 @@ pub type TokenId = AccountId;
 enum StorageKey {
     ListingAuctions,
     ExistingTokens,
+    ActiveAuctions,
 
     AuctionTokens { auction_id: AuctionId },
     AuctionDeposits { auction_id: AuctionId },
@@ -41,6 +42,7 @@ pub struct ListingAuction {
     listing_payment: Balance,
 
     auctions: UnorderedMap<AuctionId, VAuction>,
+    active_auctions: UnorderedSet<AuctionId>,
     existing_tokens: UnorderedSet<AccountId>,
 
     next_auction_id: AuctionId,
@@ -56,10 +58,27 @@ impl ListingAuction {
             listing_payment: listing_payment.0,
 
             auctions: UnorderedMap::new(StorageKey::ListingAuctions),
+            active_auctions: UnorderedSet::new(StorageKey::ActiveAuctions),
             existing_tokens: UnorderedSet::new(StorageKey::ExistingTokens),
 
             next_auction_id: 1,
 		}
+    }
+
+    pub fn get_active_auction_ids(&self) -> Vec<AuctionId> {
+        self.active_auctions.to_vec()
+    }
+
+    pub fn get_active_auctions(&self, from_index: Option<u64>, limit: Option<u64>) -> Vec<(u64, AuctionOutput)> {
+        let keys = self.active_auctions.as_vector();
+        let from_index = from_index.unwrap_or(0);
+        let limit = limit.unwrap_or(keys.len());
+        (from_index..std::cmp::min(keys.len(), from_index + limit))
+            .map(|index| {
+                let key = keys.get(index).unwrap();
+                (key, self.auctions.get(&key).unwrap().into())
+            })
+            .collect()
     }
 
     pub fn get_auctions(&self, from_index: Option<u64>, limit: Option<u64>) -> Vec<(u64, AuctionOutput)> {
@@ -70,7 +89,19 @@ impl ListingAuction {
         self.existing_tokens.to_vec()
     }
 
+    pub fn add_existing_token(&mut self, token_id: TokenId) {
+        self.assert_owner();
+        self.existing_tokens.insert(&token_id);
+    }
+
+    pub fn remove_existing_token(&mut self, token_id: TokenId) {
+        self.assert_owner();
+        self.existing_tokens.remove(&token_id);
+    }
+
     pub fn get_timestamp(&self) -> Timestamp {
         env::block_timestamp()
     }
+
+    pub fn get_next_auction_id(&self) -> AuctionId { self.next_auction_id }
 }

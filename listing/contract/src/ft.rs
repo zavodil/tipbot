@@ -96,7 +96,7 @@ impl ListingAuction {
             log!("FT transfer of bids failed. Restore the state");
 
             let mut auction: Auction = self.unwrap_auction(&auction_id);
-            let key = get_auction_deposit(account_id.clone(), token_id.clone());
+            let key = get_auction_deposit(account_id, token_id);
             auction.deposits.insert(&key, &amount.0);
 
             self.auctions.insert(&auction_id, &VAuction::Current(auction));
@@ -110,7 +110,7 @@ impl ListingAuction {
             log!("FT transfer of rewards failed. Restore the state");
 
             let mut auction: Auction = self.unwrap_auction(&auction_id);
-            let key = get_auction_deposit(account_id.clone(), token_id.clone());
+            let key = get_auction_deposit(account_id, token_id);
             auction.rewards.insert(&key, &amount.0);
 
             self.auctions.insert(&auction_id, &VAuction::Current(auction));

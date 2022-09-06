@@ -5,7 +5,7 @@ impl NearTips {
     #[payable]
     pub fn deposit(&mut self, account_id: Option<AccountId>) {
         let attached_deposit: Balance = env::attached_deposit();
-        let account_id: AccountId = account_id.unwrap_or(env::predecessor_account_id());
+        let account_id: AccountId = account_id.unwrap_or_else(||env::predecessor_account_id());
         self.deposit_to_near_account(&account_id, attached_deposit, None, true);
     }
 
@@ -58,7 +58,7 @@ impl NearTips {
             assert!(amount >= self.get_token_min_deposit(&token_id), "Deposit is too small");
         }
 
-        self.increase_deposit(account_id.clone(), token_id.clone(), amount);
+        self.increase_deposit(account_id.clone(), token_id, amount);
     }
 
 

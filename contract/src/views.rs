@@ -91,5 +91,5 @@ impl NearTips {
 }
 
 pub(crate) fn unwrap_token_id(token_id: &TokenAccountId) -> AccountId {
-    token_id.clone().unwrap_or(AccountId::new_unchecked("NEAR".to_string()))
+    token_id.clone().unwrap_or_else(|| AccountId::new_unchecked("NEAR".to_string()))
 }

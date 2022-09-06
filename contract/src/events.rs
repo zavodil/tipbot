@@ -47,7 +47,7 @@ pub mod emit {
                 "receiver_near_account": receiver_account_id,
                 "receiver_service_account": receiver_service_account,
                 "amount": U128::from(amount),
-                "token_id": get_token_name(&token_id)
+                "token_id": get_token_name(token_id)
             }),
         );
     }
@@ -60,7 +60,7 @@ pub mod emit {
             json!({
                 "account_id": account_id,
                 "amount": U128::from(amount),
-                "token_id": get_token_name(&token_id)
+                "token_id": get_token_name(token_id)
             }),
         );
     }
@@ -73,7 +73,7 @@ pub mod emit {
             json!({
                 "account_id": account_id,
                 "amount": U128::from(amount),
-                "token_id": get_token_name(&token_id)
+                "token_id": get_token_name(token_id)
             }),
         );
     }
@@ -88,7 +88,7 @@ pub mod emit {
                 "account_id": account_id,
                 "service_account": service_account,
                 "amount": U128::from(amount),
-                "token_id": get_token_name(&token_id)
+                "token_id": get_token_name(token_id)
             }),
         );
     }
@@ -100,7 +100,7 @@ pub mod emit {
             "service_fees_add",
             json!({
                 "amount": U128::from(amount),
-                "token_id": get_token_name(&token_id)
+                "token_id": get_token_name(token_id)
             }),
         );
     }
@@ -110,7 +110,7 @@ pub mod emit {
             "service_fees_remove",
             json!({
                 "amount": U128::from(amount),
-                "token_id": get_token_name(&token_id)
+                "token_id": get_token_name(token_id)
             }),
         );
     }
@@ -120,7 +120,7 @@ pub mod emit {
             "treasury_add",
             json!({
                 "amount": U128::from(amount),
-                "token_id": get_token_name(&token_id),
+                "token_id": get_token_name(token_id),
                 "account_id": account_id
             }),
         );
@@ -131,7 +131,7 @@ pub mod emit {
             "treasury_remove",
             json!({
                 "amount": U128::from(amount),
-                "token_id": get_token_name(&token_id),
+                "token_id": get_token_name(token_id),
                 "account_id": account_id
             }),
         );

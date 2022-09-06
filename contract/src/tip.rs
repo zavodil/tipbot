@@ -73,51 +73,6 @@ impl NearTips {
             &(deposit - amount));
     }
 
-    /*
-    pub(crate) fn internal_tip_service_account(&mut self,
-                                               sender_account_id: AccountId,
-                                               receiver_account: ServiceAccount,
-                                               amount: Balance,
-                                               token_id: TokenAccountId) {
-        self.assert_tip_available();
-        self.assert_check_whitelisted_token(&token_id);
-        receiver_account.verify();
-
-        assert_ne!(amount, 0, "Tip amount must be a positive number");
-        assert!(amount > self.get_token_min_tip(&token_id), "Tip is too small");
-
-        let deposit = self.internal_get_deposit(sender_account_id.clone(), token_id.clone());
-        assert!(amount <= deposit, "Not enough tokens (Deposit: {}. Requested: {})", deposit, amount);
-
-        // Tips in Tiptokens sends with NO fees
-        let is_treasury_fee_needed = token_id != Some(self.get_tiptoken_account_id());
-
-        let treasury_fee: Balance = if is_treasury_fee_needed {
-            self.get_treasure_fee_fraction(amount)
-        } else {
-            0
-        };
-        let tip_without_treasury_fee: Balance = amount - treasury_fee;
-
-        log!("Treasury. needed: {:?}. treasury_fee: {}", is_treasury_fee_needed, treasury_fee);
-
-        /* SEND TOKENS TO TIP RECEIVER */
-        self.increase_balance(receiver_account, token_id.clone(), tip_without_treasury_fee, &sender_account_id);
-
-        /* STORE FEE AT TREASURY */
-        self.treasury_add(&sender_account_id, treasury_fee, &token_id);
-
-        /* REMOVE TOKENS FROM TIP SENDER */
-        // don't use helper to avoid second deposit check
-        self.deposits.insert(
-            &TokenByNearAccount {
-                account_id: sender_account_id,
-                token_id,
-            },
-            &(deposit - amount));
-    }*/
-
-
     pub(crate) fn increase_balance(&mut self,
                                    receiver_service_account: Option<ServiceAccount>,
                                    receiver_account_id: Option<AccountId>,

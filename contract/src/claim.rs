@@ -47,7 +47,7 @@ impl NearTips {
 
             let wrap_near_contract_id = self.get_wrap_near_contract_id();
 
-            ext_wrap_near::ext(wrap_near_contract_id.clone())
+            ext_wrap_near::ext(wrap_near_contract_id)
                 .with_attached_deposit(amount)
                 .with_static_gas(GAS_FOR_WRAP_NEAR)
                 .near_deposit()
@@ -83,12 +83,12 @@ impl NearTips {
 
                 let tiptoken_account_id = self.get_tiptoken_account_id();
 
-                ext_ft_contract::ext(swap_contract_id.clone())
+                ext_ft_contract::ext(swap_contract_id)
                     .with_attached_deposit(1)
                     .with_static_gas(GAS_FOR_WITHDRAW)
                     .withdraw(
                         tiptoken_account_id.clone(),
-                        amount_out.clone(),
+                        amount_out,
                         Some(false)
                     )
                 .then(
@@ -97,7 +97,7 @@ impl NearTips {
                         .on_withdraw(
                             account_id,
                             amount_out,
-                            tiptoken_account_id.clone(),
+                            tiptoken_account_id,
                         )
                 );
 
@@ -105,9 +105,6 @@ impl NearTips {
 
             }
         }
-
-        //if token_id.is_none() {
-        //}
 
         let token_account_id = Some(token_id.clone());
 
@@ -117,9 +114,6 @@ impl NearTips {
         self.service_fees_remove(service_fee.0, &token_account_id);
         self.treasury_claimed_remove(&token_account_id, amount_in.0);
 
-
-
-
         U128::from(0)
     }
 
@@ -127,7 +121,7 @@ impl NearTips {
     pub fn on_withdraw(&mut self, account_id: AccountId, amount_withdraw: WrappedBalance, token_id: AccountId) -> U128 {
         let transfer_succeeded = is_promise_success();
 
-        log!("Withdraw succeed: {:?}. AccountId: {}. Amount to withdraw: {} of {:?} ", transfer_succeeded, account_id.clone(), amount_withdraw.0, token_id.clone() );
+        log!("Withdraw succeed: {:?}. AccountId: {}. Amount to withdraw: {} of {:?} ", transfer_succeeded, account_id.clone(), amount_withdraw.0, token_id);
 
         if !transfer_succeeded {
             self.deposit_to_near_account(&account_id, amount_withdraw.0, Some(token_id), false);
@@ -189,61 +183,14 @@ impl NearTips {
                             token_account_id,
                             WrappedBalance::from(service_fee),
                         ));
-        } else {
-            // NEAR => WNEAR
-            /*
-
-            let wrap_near_contract_id = self.get_wrap_near_contract_id();
-
-            let msg = swap_contract_args
-                .replace("%SWAP_POOL_ID%", &swap_pool_id.to_string())
-                .replace("%TOKEN_ID%", &wrap_near_contract_id.to_string())
-                .replace("%TIPTOKEN_ACCOUNT_ID%", &tiptoken_account_id.to_string())
-                .replace("%AMOUNT%", &amount_to_swap.to_string());
-
-            ext_wrap_near::ext(wrap_near_contract_id.clone())
-                .with_attached_deposit(amount_to_swap)
-                .deposit()
-
-                .then(
-                    ext_ft_contract::ext(wrap_near_contract_id.clone())
-                        .with_attached_deposit(1)
-                        .with_static_gas(GAS_FOR_SWAP)
-                        .ft_transfer_call(
-                            swap_contract_id.clone(),
-                            WrappedBalance::from(amount_to_swap),
-                            None,
-                            msg,
-                        )
-                )
-
-                .then(
-                    ext_self::ext(env::current_account_id())
-                        .with_static_gas(GAS_FOR_AFTER_SWAP)
-                        .after_swap(
-                            swap_contract_id,
-                            account_id,
-                            WrappedBalance::from(amount_to_swap),
-                            token_id,
-                            WrappedBalance::from(service_fee),
-                        )
-                );*/
         }
-
-        //Arguments: {
-        //   "receiver_id": "v2.ref-finance.near",
-        //   "amount": "1000000000000000000",
-        //   "msg": "{\"force\":0,\"actions\":[{\"pool_id\":2702,\"token_in\":\"xtoken.ref-finance.near\",\"token_out\":\"token.v2.ref-finance.near\",\"amount_in\":\"1000000000000000000\",\"min_amount_out\":\"958343690234219600\"}]}"
-        // }
-
-        // https://github.com/evgenykuzyakov/dacha/blob/master/contract-rs/dacha/src/mint.rs
     }
 }
 
 pub(crate) fn get_swap_action (token_in: &AccountId, token_out: &AccountId, amount: Balance, dex: &DEX, swap_pool_id: u32) -> Vec<SwapAction> {
     match dex {
         DEX::RefFinance => vec![SwapAction {
-            pool_id: swap_pool_id.clone(),
+            pool_id: swap_pool_id,
             token_in: token_in.clone(),
             amount_in: Some(U128(amount)),
             token_out: token_out.clone(),

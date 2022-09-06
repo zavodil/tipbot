@@ -13,7 +13,7 @@ impl NearTips {
 
     pub fn withdraw_from_service_account(&mut self, service_account: ServiceAccount, token_id: TokenAccountId) -> Promise {
         let account_id = env::predecessor_account_id();
-        self.internal_withdraw_from_service_account(service_account, token_id.clone(), account_id)
+        self.internal_withdraw_from_service_account(service_account, token_id, account_id)
     }
 
 

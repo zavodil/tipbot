@@ -7,17 +7,17 @@ impl ListingAuction {
 
    pub(crate) fn assert_auction_timestamp(&self, auction: &Auction) {
       let timestamp = env::block_timestamp();
-      assert!(timestamp >= auction.start_date && timestamp <= auction.end_date, "ERR_INACTIVE_EVENT");
+      require!(timestamp >= auction.start_date && timestamp <= auction.end_date, "ERR_INACTIVE_EVENT");
    }
 
    pub(crate) fn assert_auction_end_date_already_passed(&self, auction: &Auction) {
       let timestamp = env::block_timestamp();
-      assert!(timestamp > auction.end_date, "ERR_END_DATE_DIDNT_PASS");
+      require!(timestamp > auction.end_date, "ERR_END_DATE_DIDNT_PASS");
    }
 
    pub(crate) fn assert_auction_unlock_date_for_winner_already_passed(&self, auction: &Auction) {
       let timestamp = env::block_timestamp();
-      assert!(timestamp > auction.unlock_date_for_winner, "ERR_UNLOCK_DATE_DIDNT_PASS");
+      require!(timestamp > auction.unlock_date_for_winner, "ERR_UNLOCK_DATE_DIDNT_PASS");
    }
 
    pub(crate) fn assert_tiptoken(&self, token_id: TokenId) {

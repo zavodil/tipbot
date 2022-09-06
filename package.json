@@ -39,7 +39,6 @@
 
     "test5": "cross-env NODE_ENV=testnet && env-cmd -f ./neardev/dev-account.env jest rest-api.test.js -t 'Claim TipToken' --useStderr",
 
-
     "test:dummy-data": "cross-env NODE_ENV=testnet && cross-env REACT_CONTRACT_ID=dev-1627929046372-37713905244524 jest rest-api-dummy-data.test.js --useStderr",
     "contract:init": "cross-env NODE_ENV=testnet && jest rest-api.test.js -t 'Contract set' --useStderr"
   },

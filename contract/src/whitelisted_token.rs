@@ -63,15 +63,15 @@ impl NearTips {
 
 impl NearTips {
     pub(crate) fn get_token_min_deposit(&self, token_id: &TokenAccountId) -> Balance {
-        WhitelistedToken::from(self.whitelisted_tokens.get(&token_id).unwrap()).min_deposit
+        WhitelistedToken::from(self.whitelisted_tokens.get(token_id).unwrap()).min_deposit
     }
 
     pub(crate) fn get_token_min_tip(&self, token_id: &TokenAccountId) -> Balance {
-        WhitelistedToken::from(self.whitelisted_tokens.get(&token_id).unwrap()).min_tip
+        WhitelistedToken::from(self.whitelisted_tokens.get(token_id).unwrap()).min_tip
     }
 
     pub(crate) fn get_withdraw_commission(&self, token_id: &TokenAccountId) -> Balance {
-        WhitelistedToken::from(self.whitelisted_tokens.get(&token_id).unwrap()).withdraw_commission
+        WhitelistedToken::from(self.whitelisted_tokens.get(token_id).unwrap()).withdraw_commission
     }
 
     pub(crate) fn assert_check_whitelisted_token(&self, token_id: &TokenAccountId) {
@@ -79,12 +79,12 @@ impl NearTips {
     }
 
     pub(crate) fn check_whitelisted_token(&self, token_id: &TokenAccountId) -> bool {
-        self.whitelisted_tokens.get(&token_id).is_some()
+        self.whitelisted_tokens.get(token_id).is_some()
     }
 
     pub(crate) fn get_swap_contract(&self, token_id: &TokenAccountId) -> (DEX, AccountId, u32) {
         let token: WhitelistedToken = self.whitelisted_tokens
-            .get(&token_id)
+            .get(token_id)
             .expect("Token wasn't whitelisted")
             .into();
 
@@ -97,7 +97,7 @@ impl NearTips {
 
     pub(crate) fn get_swap_contract_id (&self, token_id: &TokenAccountId) -> AccountId {
         let token: WhitelistedToken = self.whitelisted_tokens
-            .get(&token_id)
+            .get(token_id)
             .expect("Token wasn't whitelisted")
             .into();
 
@@ -105,7 +105,7 @@ impl NearTips {
     }
 
     pub fn internal_get_whitelisted_token(&self, token_id: &TokenAccountId) -> WhitelistedTokenOutput {
-        let token: WhitelistedToken = self.whitelisted_tokens.get(&token_id).expect("ERR_TOKEN_NOT_FOUND").into();
+        let token: WhitelistedToken = self.whitelisted_tokens.get(token_id).expect("ERR_TOKEN_NOT_FOUND").into();
         token.into()
     }
 }
