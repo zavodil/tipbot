@@ -23,6 +23,11 @@ impl ListingAuction {
    pub(crate) fn assert_tiptoken(&self, token_id: TokenId) {
       assert_eq!(token_id, self.tiptoken_account_id, "ERR_WRONG_TOKEN")
    }
+
+   // if token exists in action
+   pub(crate) fn assert_auction_token(&self, auction: &Auction, token_id: &TokenId) {
+      require!(auction.tokens.contains(&token_id), "ERR_TOKEN_WAS_NOT_ADDED_TO_AUCTION");
+   }
 }
 
 pub(crate) fn unordered_map_pagination<K, VV, V>(

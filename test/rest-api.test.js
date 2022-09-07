@@ -98,7 +98,22 @@ describe("Set", () => {
         await ft.call("storage_deposit", {}, {account_id: alice, tokens: utils.ConvertToNear(0.2)});
         await ft.call("storage_deposit", {}, {account_id: bob, tokens: utils.ConvertToNear(0.2)});
 
+        let whitelist_token_by_user = await near.call("whitelist_token", {
+                tips_available: true,
+                token_id: null,
+                min_deposit: "100000000000000000000000",
+                min_tip:     "10000000000000000000000",
+                withdraw_commission: nearAPI.utils.format.parseNearAmount(withdraw_near_commission.toString()),
+                dex: null,
+                swap_contract_id: null,
+                swap_pool_id: null
+            }
+            , {account_id: alice});
+        expect(whitelist_token_by_user.type).toBe('FunctionCallError');
+        expect(whitelist_token_by_user.kind.ExecutionError).toMatch(/ERR_NOT_AN_OWNER/i);
+
         await near.call("whitelist_token", {
+                tips_available: true,
                 token_id: null,
                 min_deposit: "100000000000000000000000",
                 min_tip:     "10000000000000000000000",
@@ -110,6 +125,7 @@ describe("Set", () => {
             , {account_id: admin});
 
         await near.call("whitelist_token", {
+                tips_available: true,
                 token_id: ft_contract_account_id,
                 min_deposit: "100000000000000000", // 0.1 DAI
                 min_tip:     "50000000000000000", // 0.05 DAI
@@ -130,6 +146,7 @@ describe("Set", () => {
             , {account_id: admin});
 
         await near.call("whitelist_token", {
+                tips_available: true,
                 token_id: tiptoken_account_id,
                 min_deposit: "100000000000000000", // 0.1 TT
                 min_tip:     "50000000000000000", // 0.05 TT
@@ -141,6 +158,7 @@ describe("Set", () => {
             , {account_id: admin});
 
         await near.call("whitelist_token", {
+                tips_available: true,
                 token_id: wrap_near_contract_id,
                 min_deposit: "100000000000000000000000", // 0.1 wNEAR
                 min_tip:     "50000000000000000000000", // 0.05 wNEAR
@@ -660,7 +678,7 @@ describe("Tip FT", () => {
             account_id: alice
         });
         expect(illegal_token.type).toBe('FunctionCallError');
-        expect(illegal_token.kind.ExecutionError).toMatch(/(Token wasn't whitelisted)/i);
+        expect(illegal_token.kind.ExecutionError).toMatch(/(ERR_TOKEN_WAS_NOT_WHITELISTED)/i);
 
         /*
         const whitelist_token = await near.call("whitelist_token", {

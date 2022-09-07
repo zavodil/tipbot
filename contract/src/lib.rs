@@ -19,6 +19,7 @@ mod unclaimed_tips;
 mod wrap;
 mod views;
 mod events;
+mod migration;
 
 pub use crate::config::*;
 pub use crate::ft::*;
@@ -33,6 +34,7 @@ pub use crate::unclaimed_tips::*;
 pub use crate::legacy::*;
 pub use crate::wrap::*;
 pub use crate::views::*;
+pub use crate::migration::*;
 
 pub type TokenAccountId = Option<AccountId>;
 pub type ServiceAccountId = u32;
@@ -71,6 +73,11 @@ pub struct NearTips {
     service_fees: LookupMap<TokenAccountId, Balance>,
 
     config: LazyOption<Config>,
+    version: u16,
+
+    deposits_v2: LookupMap<TokenByNearAccountV2, Balance>,
+    telegram_tips_v2: LookupMap<TokenByTelegramAccount, Balance>,
+
 }
 
 #[derive(BorshDeserialize, BorshSerialize)]
@@ -113,7 +120,7 @@ pub enum StorageKey {
 #[near_bindgen]
 impl NearTips {
     #[init]
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, version: u16) -> Self {
         Self {
             deposits: LookupMap::new(StorageKey::Deposits),
             unclaimed_tips: LookupMap::new(StorageKey::UnclaimedTips),
@@ -125,6 +132,12 @@ impl NearTips {
             treasury_by_account: LookupMap::new(StorageKey::TreasuryByAccount),
             service_fees: LookupMap::new(StorageKey::ServiceFees),
             config: LazyOption::new(StorageKey::Config, Some(&config)),
+            version,
+
+            deposits_v2: LookupMap::new(StorageKey::TelegramDepositsLookupMap),
+            telegram_tips_v2: LookupMap::new(StorageKey::TelegramTipsLookupMap),
         }
     }
+
+    pub fn get_version(&self) -> u16 { self.version }
 }

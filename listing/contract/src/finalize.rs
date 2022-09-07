@@ -30,6 +30,8 @@ impl ListingAuction {
         auction.winner_id = Some(winner_account_id.clone());
         self.auctions.insert(&auction_id, &VAuction::Current(auction));
 
+        events::emit::finalize(&auction_id, &winner_account_id);
+
         winner_account_id
     }
 
@@ -50,6 +52,8 @@ impl ListingAuction {
             self.auctions.insert(&auction_id, &VAuction::Current(auction));
 
             let amount = WrappedBalance::from(balance_to_withdraw);
+
+            events::emit::withdraw_rewards(&auction_id, &account_id, &token_id, balance_to_withdraw);
 
             ext_token_receiver::ext(token_id.clone())
                 .with_static_gas(GAS_FOR_FT_TRANSFER)
@@ -96,6 +100,8 @@ impl ListingAuction {
             auction.deposits.insert(&key, &0u128);
             self.auctions.insert(&auction_id, &VAuction::Current(auction));
 
+            events::emit::withdraw_bids(&auction_id, &account_id, &token_id, balance_to_withdraw);
+
             let amount = WrappedBalance::from(balance_to_withdraw);
 
             ext_token_receiver::ext(self.tiptoken_account_id.clone())
@@ -135,6 +141,8 @@ impl ListingAuction {
 
             let total_reward = auction.total_rewards.get(&token_id).unwrap_or_default();
             let winner_rewards = u128_ratio(total_reward, balance_to_claim, total_deposited);
+
+           events::emit::claim_reward(&auction_id, &account_id, &token_id, winner_rewards);
 
             auction.reward_receivers.insert(&account_id);
             self.auctions.insert(&auction_id, &VAuction::Current(auction));

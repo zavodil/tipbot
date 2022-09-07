@@ -73,7 +73,7 @@ impl NearTips {
         assert_eq!(
             &env::predecessor_account_id(),
             &self.internal_config().owner_id,
-            "Not an owner"
+            "ERR_NOT_AN_OWNER"
         );
     }
 

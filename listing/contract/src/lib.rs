@@ -9,6 +9,7 @@ mod auction;
 mod ft;
 mod vote;
 mod finalize;
+mod events;
 
 use crate::utils::*;
 pub use crate::auction::*;

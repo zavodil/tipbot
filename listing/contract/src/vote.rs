@@ -52,6 +52,9 @@ impl ListingAuction {
 
         let mut auction: Auction = self.unwrap_auction(&auction_id);
         self.assert_auction_timestamp(&auction);
+        self.assert_auction_token(&auction, &listing_token_id);
+
+        events::emit::vote(&auction_id, &account_id, &listing_token_id, amount);
 
         let key = get_auction_deposit(account_id, listing_token_id.clone());
 
@@ -62,14 +65,14 @@ impl ListingAuction {
         auction.total_deposits.insert(&listing_token_id, &(previous_total_deposit + amount));
 
         self.auctions.insert(&auction_id, &VAuction::Current(auction));
-
-        // TODO EVENT
     }
 
     pub(crate) fn add_reward(&mut self, auction_id: AuctionId, account_id: AccountId, attached_token_id: TokenId, amount: Balance) {
         let mut auction: Auction = self.unwrap_auction(&auction_id);
         self.assert_auction_timestamp(&auction);
         assert!(auction.tokens.contains(&attached_token_id), "ERR_ILLEGAL_TOKEN");
+
+        events::emit::add_reward(&auction_id, &account_id, &attached_token_id, amount);
 
         let key = get_auction_deposit(account_id, attached_token_id.clone());
 
@@ -80,18 +83,6 @@ impl ListingAuction {
         auction.total_rewards.insert(&attached_token_id, &(previous_total_rewards + amount));
 
         self.auctions.insert(&auction_id, &VAuction::Current(auction));
-
-        // TODO EVENT
-    }
-
-    pub(crate) fn internal_add_token_to_auction(&mut self, auction_id: AuctionId, token_id: TokenId){
-        let mut auction: Auction = self.unwrap_auction(&auction_id);
-
-        auction.tokens.insert(&token_id);
-
-        self.auctions.insert(&auction_id, &VAuction::Current(auction));
-
-        //TODO EVENT
     }
 }
 

@@ -2,6 +2,7 @@ use crate::*;
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct WhitelistedToken {
+    pub tips_available: bool,
     pub min_deposit: Balance,
     pub min_tip: Balance,
     pub withdraw_commission: Balance,
@@ -32,6 +33,7 @@ impl From<VWhitelistedToken> for WhitelistedToken {
 #[near_bindgen]
 impl NearTips {
     pub fn whitelist_token(&mut self,
+                           tips_available: bool,
                            token_id: TokenAccountId,
                            min_deposit: WrappedBalance,
                            min_tip: WrappedBalance,
@@ -39,7 +41,10 @@ impl NearTips {
                            dex: Option<DEX>,
                            swap_contract_id: Option<AccountId>,
                            swap_pool_id: Option<u32>) {
+        self.assert_owner();
+
         let token = WhitelistedToken {
+            tips_available,
             min_deposit: min_deposit.0,
             min_tip: min_tip.0,
             withdraw_commission: withdraw_commission.0,
@@ -74,8 +79,16 @@ impl NearTips {
         WhitelistedToken::from(self.whitelisted_tokens.get(token_id).unwrap()).withdraw_commission
     }
 
+    pub(crate) fn assert_token_tip_available(&self, token_id: &TokenAccountId) {
+        let token: WhitelistedToken = self.whitelisted_tokens
+            .get(token_id).
+            expect("ERR_TOKEN_WAS_NOT_WHITELISTED")
+            .into();
+        assert!(token.tips_available, "ERR_TIPS_ARE_NOT_AVAILABLE");
+    }
+
     pub(crate) fn assert_check_whitelisted_token(&self, token_id: &TokenAccountId) {
-        assert!(self.check_whitelisted_token(token_id), "Token wasn't whitelisted");
+        assert!(self.check_whitelisted_token(token_id), "ERR_TOKEN_WAS_NOT_WHITELISTED");
     }
 
     pub(crate) fn check_whitelisted_token(&self, token_id: &TokenAccountId) -> bool {
@@ -85,7 +98,7 @@ impl NearTips {
     pub(crate) fn get_swap_contract(&self, token_id: &TokenAccountId) -> (DEX, AccountId, u32) {
         let token: WhitelistedToken = self.whitelisted_tokens
             .get(token_id)
-            .expect("Token wasn't whitelisted")
+            .expect("ERR_TOKEN_WAS_NOT_WHITELISTED")
             .into();
 
         if let (Some(dex), Some(swap_contract_id), Some(swap_pool_id)) = (token.dex, token.swap_contract_id, token.swap_pool_id) {
@@ -95,7 +108,7 @@ impl NearTips {
         }
     }
 
-    pub(crate) fn get_swap_contract_id (&self, token_id: &TokenAccountId) -> AccountId {
+    pub(crate) fn get_swap_contract_id(&self, token_id: &TokenAccountId) -> AccountId {
         let token: WhitelistedToken = self.whitelisted_tokens
             .get(token_id)
             .expect("Token wasn't whitelisted")
@@ -113,8 +126,7 @@ impl NearTips {
 pub fn get_token_name(token: &TokenAccountId) -> String {
     if let Some(token) = token {
         token.to_string()
-    }
-    else {
+    } else {
         "NEAR".to_string()
     }
 }
@@ -125,9 +137,9 @@ pub struct WhitelistedTokenOutput {
     pub min_deposit: WrappedBalance,
     pub min_tip: WrappedBalance,
     pub withdraw_commission: WrappedBalance,
-    pub dex: Option <DEX>,
-    pub swap_contract_id: Option <AccountId>,
-    pub swap_pool_id: Option <u32>
+    pub dex: Option<DEX>,
+    pub swap_contract_id: Option<AccountId>,
+    pub swap_pool_id: Option<u32>,
 }
 
 impl From<WhitelistedToken> for WhitelistedTokenOutput {
@@ -138,7 +150,7 @@ impl From<WhitelistedToken> for WhitelistedTokenOutput {
             withdraw_commission: token.withdraw_commission.into(),
             dex: token.dex,
             swap_contract_id: token.swap_contract_id,
-            swap_pool_id: token.swap_pool_id
+            swap_pool_id: token.swap_pool_id,
         }
     }
 }

@@ -29,7 +29,7 @@ impl NearTips {
                                amount: Balance,
                                token_id: TokenAccountId) {
         self.assert_tip_available();
-        self.assert_check_whitelisted_token(&token_id);
+        self.assert_token_tip_available(&token_id);
 
         if let Some(receiver_service_account) = receiver_service_account.clone() {
             require!(receiver_account_id.is_none(), "ERR_TOO_MANY_TIP_RECEIVERS");

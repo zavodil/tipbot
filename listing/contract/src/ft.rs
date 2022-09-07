@@ -86,16 +86,19 @@ impl ListingAuction {
             auction.reward_receivers.remove(&account_id);
 
             self.auctions.insert(&auction_id, &VAuction::Current(auction));
+
+            events::emit::claim_reward_failed(&auction_id, &account_id);
         }
     }
 
     #[private]
     pub fn on_withdraw_bids_ft_transfer(&mut self, auction_id: AuctionId, token_id: AccountId, amount: WrappedBalance, account_id: AccountId) {
-        // TODO what if malicious FT will fail all fr_transfer?
         if !is_promise_success() {
-            log!("FT transfer of bids failed. Restore the state");
-
             let mut auction: Auction = self.unwrap_auction(&auction_id);
+            self.assert_auction_token(&auction, &token_id);
+
+            log!("FT transfer of bids failed. Restore the state");
+            events::emit::withdraw_bids_failed(&auction_id, &account_id, &token_id, amount.0);
             let key = get_auction_deposit(account_id, token_id);
             auction.deposits.insert(&key, &amount.0);
 
@@ -105,11 +108,13 @@ impl ListingAuction {
 
     #[private]
     pub fn on_withdraw_rewards_ft_transfer(&mut self, auction_id: AuctionId, token_id: AccountId, amount: WrappedBalance, account_id: AccountId) {
-        // TODO what if malicious FT will fail all fr_transfer?
         if !is_promise_success() {
-            log!("FT transfer of rewards failed. Restore the state");
-
             let mut auction: Auction = self.unwrap_auction(&auction_id);
+            self.assert_auction_token(&auction, &token_id);
+
+            log!("FT transfer of rewards failed. Restore the state");
+            events::emit::withdraw_rewards_failed(&auction_id, &account_id, &token_id, amount.0);
+
             let key = get_auction_deposit(account_id, token_id);
             auction.rewards.insert(&key, &amount.0);
 

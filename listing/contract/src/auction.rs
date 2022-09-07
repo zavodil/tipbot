@@ -106,8 +106,9 @@ impl ListingAuction {
 
         self.auctions.insert(&self.next_auction_id, &VAuction::Current(auction));
 
-
         self.active_auctions.insert(&self.next_auction_id);
+
+        events::emit::add_auction(&self.next_auction_id, &start_date, &end_date, &unlock_date_for_winner);
 
         self.next_auction_id += 1;
 
@@ -155,6 +156,16 @@ impl ListingAuction {
 }
 
 impl ListingAuction {
+    pub(crate) fn internal_add_token_to_auction(&mut self, auction_id: AuctionId, token_id: TokenId){
+        let mut auction: Auction = self.unwrap_auction(&auction_id);
+
+        auction.tokens.insert(&token_id);
+
+        self.auctions.insert(&auction_id, &VAuction::Current(auction));
+
+        events::emit::add_token_to_auction(&auction_id, &token_id);
+    }
+
     pub(crate) fn unwrap_auction(&self, auction_id: &AuctionId) -> Auction {
         self.auctions.get(auction_id).expect("ERR_NO_AUCTION").into()
     }
