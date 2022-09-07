@@ -65,7 +65,6 @@ impl NearTips {
 
     }
 
-    // consider Unwrap WNEAR
     #[private]
     pub fn after_swap(
         &mut self,

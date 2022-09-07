@@ -130,18 +130,9 @@ describe("Set", () => {
                 min_deposit: "100000000000000000", // 0.1 DAI
                 min_tip:     "50000000000000000", // 0.05 DAI
                 withdraw_commission: ConvertToPow18(withdraw_ft_commission),
-                //swap_contract_args: "{\"force\":0,\"actions\":[{\"pool_id\":%SWAP_POOL_ID%,\"token_in\":\"%TOKEN_ID%\",\"token_out\":\"%TIPTOKEN_ACCOUNT_ID%\",\"amount_in\":\"%AMOUNT%\",\"min_amount_out\":\"1\"}]}",
-                // {\"actions\": [{\"pool_id\": 0, \"token_in\": \"$TOKEN1\", \"amount_in\": \"10000\", \"token_out\": \"$TOKEN2\", \"min_amount_out\": \"1\"}]}"
                 dex: "RefFinance",
                 swap_contract_id: "ref-finance-101.testnet",
                 swap_pool_id: 1669
-
-                //"msg": "{\"force\":0,\"actions\":[{\"pool_id\":239,\"token_in\":\"dai.fakes.testnet\",\"token_out\":\"aurora.fakes.testnet\",\"amount_in\":\"1000000000000000000\",\"min_amount_out\":\"81626462880046380\"}]}"
-                //
-                // msg: {"force":0,"actions":[{"pool_id":239,"token_in":"dai.fakes.testnet","token_out":"aurora.fakes.testnet","amount_in":"1000000000000000000","min_amount_out":"81626462880046380"}]}
-                // msg: {"force":0,"actions":[{"pool_id":239,"token_in":"dai.fakes.testnet","token_out":"aurora.fakes.testnet","amount_in":"99000000000000","min_amount_out":"1"}]}",
-
-
             }
             , {account_id: admin});
 
@@ -158,7 +149,7 @@ describe("Set", () => {
             , {account_id: admin});
 
         await near.call("whitelist_token", {
-                tips_available: true,
+                tips_available: false,
                 token_id: wrap_near_contract_id,
                 min_deposit: "100000000000000000000000", // 0.1 wNEAR
                 min_tip:     "50000000000000000000000", // 0.05 wNEAR
@@ -168,14 +159,6 @@ describe("Set", () => {
                 swap_pool_id: 1714,
             }
             , {account_id: admin});
-
-        /*
-        await near.call("add_chat_settings", {
-            chat_id,
-            admin_account_id: chat_admin,
-            treasure_fee_numerator
-        }, {account_id: admin});
-        */
     });
 
     test('Accounts has enough funds', async () => {
