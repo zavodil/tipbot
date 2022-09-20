@@ -31,13 +31,11 @@ pub use crate::claim::*;
 pub use crate::whitelisted_token::*;
 pub use crate::treasury::*;
 pub use crate::unclaimed_tips::*;
-pub use crate::legacy::*;
 pub use crate::wrap::*;
-pub use crate::views::*;
 pub use crate::migration::*;
 
 pub type TokenAccountId = Option<AccountId>;
-pub type ServiceAccountId = u32;
+pub type ServiceAccountId = u64;
 pub type WrappedBalance = U128;
 
 /// All services has common `deposits` on behalf of NEAR account
@@ -95,7 +93,6 @@ pub trait ExtSwap {
 /// Helper structure to for keys of the persistent collections.
 #[derive(BorshSerialize, BorshStorageKey)]
 pub enum StorageKey {
-    // TODO remove if no migration
     Tips,
     TipsLookupMap,
     ChatPointsLookupMap,
@@ -120,7 +117,7 @@ pub enum StorageKey {
 #[near_bindgen]
 impl NearTips {
     #[init]
-    pub fn new(config: Config, version: u16) -> Self {
+    pub fn new(config: Config, version: Option<u16>) -> Self {
         Self {
             deposits: LookupMap::new(StorageKey::Deposits),
             unclaimed_tips: LookupMap::new(StorageKey::UnclaimedTips),
@@ -132,7 +129,7 @@ impl NearTips {
             treasury_by_account: LookupMap::new(StorageKey::TreasuryByAccount),
             service_fees: LookupMap::new(StorageKey::ServiceFees),
             config: LazyOption::new(StorageKey::Config, Some(&config)),
-            version,
+            version: version.unwrap_or_default(),
 
             deposits_v2: LookupMap::new(StorageKey::TelegramDepositsLookupMap),
             telegram_tips_v2: LookupMap::new(StorageKey::TelegramTipsLookupMap),

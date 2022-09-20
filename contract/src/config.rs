@@ -81,7 +81,7 @@ impl NearTips {
         assert_eq!(
             &env::predecessor_account_id(),
             &self.internal_config().operator_id,
-            "No access"
+            "ERR_NO_ACCESS"
         );
     }
 

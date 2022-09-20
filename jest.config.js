@@ -4,4 +4,7 @@ module.exports = {
     globals: {
         Uint8Array: Uint8Array,
     },
+    "testMatch": [
+        "<rootDir>/test/*.test.js"
+    ]
 };

@@ -5,6 +5,7 @@ use crate::*;
 const NEARV2: &str = "near";
 
 pub type TokenAccountIdV2 = String;
+
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct TokenByNearAccountV2 {
     pub account_id: AccountId,
@@ -52,6 +53,13 @@ pub struct TelegramUserInChat {
     pub chat_id: TelegramChatId, // chat_id is negative, so don't forget * -1
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct NearTelegramAccount {
+    pub telegram_id: TelegramAccountId,
+    pub account_id: AccountId,
+}
+
 pub type TelegramChatId = u64;
 pub type RewardPoint = u32;
 
@@ -95,35 +103,32 @@ impl NearTips {
             version: migration_version,
 
             deposits_v2: old_contract.deposits,
-            telegram_tips_v2: old_contract.telegram_tips
+            telegram_tips_v2: old_contract.telegram_tips,
         }
     }
 
-
-
-    pub fn migration_near_deposit(&mut self) -> WrappedBalance {
+    // User transfers his NEAR deposit
+    pub fn migrate_near_deposit(&mut self) {
         self.assert_withdraw_available();
 
         let account_id = env::predecessor_account_id();
 
-        let key = TokenByNearAccountV2 {
-            account_id: account_id.clone(),
-            token_account_id: NEARV2.to_string()
-        };
+        self.internal_migrate_near_deposit(account_id);
+    }
 
-        let deposit = self.deposits_v2.get(&key).expect("ERR_DEPOSIT_NOT_FOUND");
-        require!(deposit > 0, "ERR_DEPOSIT_IS_ZERO");
+    // Bulk transfer NEAR deposit
+    pub fn migrate_bulk_near_deposit(&mut self, accounts: Vec<AccountId>) {
+        self.assert_withdraw_available();
+        self.assert_operator();
 
-        self.deposits_v2.insert(&key, &0u128);
-
-        self.increase_deposit(account_id, NEAR, deposit);
-
-        deposit.into()
+        for account_id in accounts {
+            self.internal_migrate_near_deposit(account_id);
+        }
     }
 
     pub fn get_balance_v2(&self,
-                       telegram_account: TelegramAccountId,
-                       token_id: Option<TokenAccountIdV2>,
+                          telegram_account: TelegramAccountId,
+                          token_id: Option<TokenAccountIdV2>,
     ) -> WrappedBalance {
         self.telegram_tips_v2.get(
             &TokenByTelegramAccount {
@@ -139,30 +144,52 @@ impl NearTips {
     ) -> WrappedBalance {
         let key = TokenByNearAccountV2 {
             account_id: account_id.clone(),
-            token_account_id: unwrap_token_id_v2(token_id).1
+            token_account_id: unwrap_token_id_v2(token_id).1,
         };
 
         self.deposits_v2.get(&key).unwrap_or_default().into()
     }
 
-    pub fn migration_transfer_tips_to_deposit(&mut self, telegram_account: TelegramAccountId, account_id: AccountId, token_id: Option<TokenAccountIdV2>) -> WrappedBalance {
+    pub fn migrate_tips_to_deposit(&mut self, accounts: Vec<NearTelegramAccount>, token_id: Option<TokenAccountIdV2>) {
         self.assert_operator();
         let (token_id_v3, token_id_v2) = unwrap_token_id_v2(token_id.clone());
         self.assert_withdraw_available();
         self.assert_check_whitelisted_token(&token_id_v3);
 
-        let balance: Balance = self.get_balance_v2(telegram_account.clone(), token_id).0;
-
-        self.telegram_tips_v2.insert(&TokenByTelegramAccount {
-            telegram_account: telegram_account.clone(),
-            token_account_id: token_id_v2.clone(),
-        }, &0);
-
-        self.increase_deposit(account_id, token_id_v3, balance);
-
-        balance.into()
+        for account in accounts {
+            self.internal_migrate_tips_to_deposit(token_id_v3.clone(), token_id_v2.clone(), account.telegram_id, account.account_id, token_id.clone());
+        }
     }
 
+    pub fn migrate_import_accounts_pairs(&mut self, accounts: Vec<NearTelegramAccount>) {
+        self.assert_operator();
+
+        for account in accounts {
+            let service_account = ServiceAccount {
+                service: Service::Telegram,
+                account_id: Some(account.telegram_id),
+                account_name: None
+            };
+            service_account.verify();
+
+            let account_id = account.account_id;
+
+            let existing_service_with_same_type = self.get_service_accounts_by_service(account_id.clone(), service_account.service.clone());
+            assert!(existing_service_with_same_type.is_none(), "ERR_THIS_SERVICE_ACCOUNT_TYPE_ALREADY_SET_FOR_CURRENT_USER");
+
+            require!(self.service_accounts.get(&service_account).is_none(), "ERR_SERVICE_ACCOUNT_ALREADY_SET_BY_OTHER_USER");
+
+            self.service_accounts.insert(&service_account, &account_id);
+
+            let mut existing_service_accounts = self.internal_get_service_accounts_by_near_account(&account_id);
+            existing_service_accounts.push(service_account.clone());
+            self.internal_set_service_accounts_by_near_account(&account_id, &existing_service_accounts);
+
+            events::emit::insert_service_account(&account_id, &service_account);
+        }
+    }
+
+    // import accounts
     pub fn migrate_import_accounts(&mut self, accounts: Vec<AccountId>, service_accounts: Vec<ServiceAccount>) {
         self.assert_operator();
 
@@ -187,16 +214,45 @@ impl NearTips {
 
             events::emit::insert_service_account(&account_id, &service_account);
         }
+    }
+}
 
+impl NearTips {
+    fn internal_migrate_near_deposit(&mut self, account_id: AccountId) {
+        let key = TokenByNearAccountV2 {
+            account_id: account_id.clone(),
+            token_account_id: NEARV2.to_string(),
+        };
 
+        let deposit = self.deposits_v2.get(&key).expect("ERR_DEPOSIT_NOT_FOUND");
+
+        if deposit > 0 {
+            self.deposits_v2.insert(&key, &0u128);
+
+            self.increase_deposit(account_id.clone(), NEAR, deposit);
+        }
+
+        log!("Transfer {} NEAR for {}", deposit, account_id);
+    }
+
+    fn internal_migrate_tips_to_deposit(&mut self, token_id_v3: TokenAccountId, token_id_v2: TokenAccountIdV2, telegram_account: TelegramAccountId, account_id: AccountId, token_id: Option<TokenAccountIdV2>) {
+        let balance: Balance = self.get_balance_v2(telegram_account.clone(), token_id).0;
+
+        self.telegram_tips_v2.insert(&TokenByTelegramAccount {
+            telegram_account: telegram_account.clone(),
+            token_account_id: token_id_v2,
+        }, &0);
+
+        self.increase_deposit(account_id.clone(), token_id_v3.clone(), balance);
+
+        log!("Deposited {} of {} for {} (telegram {})", balance, get_token_name(&token_id_v3), account_id, telegram_account);
     }
 }
 
 fn unwrap_token_id_v2(token_id: Option<TokenAccountIdV2>) -> (TokenAccountId, TokenAccountIdV2) {
-    let token_id_v3 = if let Some (token_id) = token_id.clone() {
+    let token_id_v3 = if let Some(token_id) = token_id.clone() {
         Some(AccountId::new_unchecked(token_id))
-    }
-    else {
+    } else {
         NEAR
     };
 

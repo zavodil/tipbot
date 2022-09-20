@@ -59,10 +59,10 @@ impl NearTips {
         self.assert_operator();
         service_account.verify();
 
+        require!(self.service_accounts.get(&service_account).is_none(), "ERR_SERVICE_ACCOUNT_ALREADY_SET_BY_OTHER_USER");
+
         let existing_service_with_same_type = self.get_service_accounts_by_service(account_id.clone(), service_account.service.clone());
         assert!(existing_service_with_same_type.is_none(), "ERR_THIS_SERVICE_ACCOUNT_TYPE_ALREADY_SET_FOR_CURRENT_USER");
-
-        require!(self.service_accounts.get(&service_account).is_none(), "ERR_SERVICE_ACCOUNT_ALREADY_SET_BY_OTHER_USER");
 
         self.service_accounts.insert(&service_account, &account_id);
 
